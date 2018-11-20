@@ -17,3 +17,5 @@ Run get-peg-in-stats.py to parse the Liquid chain. Results are logged to "liquid
 * outages - tracks intervals greater than 15 minutes where the network is not operational.
 * missing_blocks - tracks blocks that were not generated and determines which functionary failed to create the block
 * fees - tracks fees collected in each block
+
+The tool remembers where it last ran and can be run periodically to get more recent updates.
