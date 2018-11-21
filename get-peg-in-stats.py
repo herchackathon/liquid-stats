@@ -16,6 +16,7 @@ def log_downtime(configuration, block_time):
             downtime = downtime + 1
     if downtime > 15:
         configuration.stats.total_downtime = configuration.stats.total_downtime + downtime
+        configuration.logger.log_downtime(block_time, downtime)
 
 def log_inputs(configuration, tx_full, block_time, block_height):
     for input in tx_full["vin"]:
@@ -38,7 +39,8 @@ def log_outputs(configuration, tx_full, block_time, block_height):
         if "addresses" in output["scriptPubKey"] and output["scriptPubKey"]["addresses"][0] == LiquidConstants.liquid_fee_address:
             configuration.stats.fee_total = configuration.stats.fee_total + output["value"]
             configuration.logger.log_fee(block_height, block_time, int(decimal.Decimal(10e8) * output["value"]))
-      
+        if output["scriptPubKey"]["asm"] == "OP_RETURN" and "asset" in output and output["asset"] != LiquidConstants.btc_asset and "value" in output and output["value"] > 0:
+            configuration.logger.log_issuance(block_height, block_time, output["asset"], int(decimal.Decimal(10e8) * 0-output["value"]))       
 
 def print_stats(stats, block_height, last_block_time):
     print "amount in : {0}".format(stats.amount_in)
@@ -55,21 +57,8 @@ def write_headers(peg_writer, fee_writer, issuance_writer, outages_writer, missi
     outages_writer.writerow(['Outage End','Length'])
     missing_rounds_writer.writerow(['Missing Time', 'Functionary Id'])
 
-
-def remove_if_exists(path):
-    if os.path.exists(path):
-        os.remove(path)
-
 def main():
     configuration = Configuration()
-
-    if not configuration.continuing:
-        remove_if_exists("peg.csv")
-        remove_if_exists("fee.csv")
-        remove_if_exists("issuance.csv")
-        remove_if_exists("outages.csv")
-        remove_if_exists("missing_rounds.csv")
-
 
     liquid_rpc = get_liquid_rpc()
 
@@ -97,6 +86,7 @@ def main():
 
         configuration.save(last_height, block_time)
         print_stats(configuration.stats, i, block_time)
+        configuration.logger.conn.commit()
     else:
         print "Nothing new to parse."
 

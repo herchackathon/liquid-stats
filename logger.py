@@ -32,9 +32,6 @@ class Logger:
     def log_issuance(self, block_height, block_time, asset_id, amount):
          self.conn.execute("INSERT INTO issuances VALUES (?, ?, ?, ?)", (block_height, to_timestamp(block_time), asset_id, amount))
 
-    def log_burn(self):
-        print "burn"
-
     def log_peg(self, block_height, block_time, amount):
          self.conn.execute("INSERT INTO pegs VALUES (?, ?, ?)", (block_height, to_timestamp(block_time), amount))
 
