@@ -5,6 +5,18 @@ def to_timestamp(time_as_datetime):
     return int((time_as_datetime - datetime.fromtimestamp(0)).total_seconds())
 
 class Logger:
+
+    SCHEMA_VERSION = 1 #Update this if the schema changes and the chain needs to be reindexed.
+    
+    def reindex(self):
+        self.conn.execute('''DELETE FROM missing_blocks''')
+        self.conn.execute('''DELETE FROM fees''')
+        self.conn.execute('''DELETE FROM outages''')
+        self.conn.execute('''DELETE FROM pegs''')
+        self.conn.execute('''DELETE FROM issuances''')
+        self.last_block = 0
+        self.last_time = None
+
     def __init__(self):
         #Initialize Database if not created
         self.conn = sqlite3.connect('liquid.db')
@@ -14,24 +26,23 @@ class Logger:
         self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int)''')
         self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL)''')
         self.conn.execute('''CREATE TABLE if not exists last_block (block int, datetime int)''')
+        self.conn.execute('''CREATE TABLE if not exists schema_version (version int)''')
 
-        configuration = self.conn.execute("SELECT block, datetime FROM last_block").fetchall()
-        if len(configuration) == 0:      
-            self.conn.execute('''DELETE FROM missing_blocks''')
-            self.conn.execute('''DELETE FROM fees''')
-            self.conn.execute('''DELETE FROM outages''')
-            self.conn.execute('''DELETE FROM pegs''')
-            self.conn.execute('''DELETE FROM issuances''')
-            self.last_block = 0
-            self.last_time = None
+        schema_version = self.conn.execute("SELECT version FROM schema_version").fetchall()
+        if len(schema_version) ==0 or schema_version[0][0] != self.SCHEMA_VERSION:
+            self.reindex()
         else:
-            self.last_time = datetime.fromtimestamp(configuration[0][1])
-            self.last_block = configuration[0][0]
-            self.conn.execute('''DELETE FROM missing_blocks WHERE datetime >= ? ''', (to_timestamp(self.last_time),))
-            self.conn.execute('''DELETE FROM fees WHERE datetime >= ? ''', (to_timestamp(self.last_time),))
-            self.conn.execute('''DELETE FROM outages WHERE end_time >= ? ''', (to_timestamp(self.last_time),))
-            self.conn.execute('''DELETE FROM pegs WHERE datetime >= ? ''', (to_timestamp(self.last_time),))
-            self.conn.execute('''DELETE FROM issuances WHERE datetime >= ? ''', (to_timestamp(self.last_time),)) 
+            configuration = self.conn.execute("SELECT block, datetime FROM last_block").fetchall()
+            if len(configuration) == 0:      
+                self.reindex()
+            else:
+                self.last_time = datetime.fromtimestamp(configuration[0][1])
+                self.last_block = configuration[0][0]
+                self.conn.execute('''DELETE FROM missing_blocks WHERE datetime >= ? ''', (to_timestamp(self.last_time),))
+                self.conn.execute('''DELETE FROM fees WHERE datetime >= ? ''', (to_timestamp(self.last_time),))
+                self.conn.execute('''DELETE FROM outages WHERE end_time >= ? ''', (to_timestamp(self.last_time),))
+                self.conn.execute('''DELETE FROM pegs WHERE datetime >= ? ''', (to_timestamp(self.last_time),))
+                self.conn.execute('''DELETE FROM issuances WHERE datetime >= ? ''', (to_timestamp(self.last_time),)) 
         self.conn.commit()
 
     def log_issuance(self, block_height, block_time, asset_id, amount):
@@ -53,4 +64,8 @@ class Logger:
     def save_progress(self, last_block, last_timestamp):
         self.conn.execute("DELETE FROM last_block")
         self.conn.execute("INSERT INTO last_block VALUES (?, ?) ", (last_block, to_timestamp(last_timestamp)))
+
+        self.conn.execute("DELETE FROM schema_version")
+        self.conn.execute("INSERT INTO schema_version VALUES (?) ", (Logger.SCHEMA_VERSION,))
+
         self.conn.commit()
