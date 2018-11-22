@@ -12,7 +12,7 @@ class Logger:
         self.conn.execute('''CREATE TABLE if not exists fees (block int, datetime int, amount int)''')
         self.conn.execute('''CREATE TABLE if not exists outages (end_time int, length int)''')
         self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int)''')
-        self.conn.execute('''CREATE TABLE if not exists issuances (datetime int, block int, asset text, amount int NULL)''')
+        self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL)''')
         self.conn.execute('''CREATE TABLE if not exists last_block (block int, datetime int)''')
 
         configuration = self.conn.execute("SELECT block, datetime FROM last_block").fetchall()
