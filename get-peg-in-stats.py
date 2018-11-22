@@ -34,7 +34,7 @@ def log_inputs(configuration, tx_full, block_time, block_height):
 def log_outputs(configuration, tx_full, block_time, block_height):
      for output in tx_full["vout"]:
         if "pegout_chain" in output["scriptPubKey"]:
-            configuration.logger.log_peg(block_height, block_time, (0-to_satoshis(output["value"]))
+            configuration.logger.log_peg(block_height, block_time, (0-to_satoshis(output["value"])))
         if "addresses" in output["scriptPubKey"] and output["scriptPubKey"]["addresses"][0] == LiquidConstants.liquid_fee_address:
             configuration.logger.log_fee(block_height, block_time, to_satoshis(output["value"]))
         if output["scriptPubKey"]["asm"] == "OP_RETURN" and "asset" in output and output["asset"] != LiquidConstants.btc_asset and "value" in output and output["value"] > 0:
