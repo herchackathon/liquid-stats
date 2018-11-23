@@ -20,25 +20,25 @@ def log_downtime(configuration, block_time):
         configuration.logger.log_downtime(block_time, downtime)
 
 def log_inputs(configuration, tx_full, block_time, block_height):
-    for input in tx_full["vin"]:
+    for idx, input in enumerate(tx_full["vin"]):
         if "is_pegin" in input and input["is_pegin"]:
             mainchain = get_bitcoin_rpc().decoderawtransaction(input["pegin_witness"][4])
-            configuration.logger.log_peg(block_height, block_time, to_satoshis(mainchain["vout"][input["vout"]]["value"]))
+            configuration.logger.log_peg(block_height, block_time, to_satoshis(mainchain["vout"][input["vout"]]["value"]), tx_full["txid"], idx)
         if "issuance" in input:
             issuance = input["issuance"]
             if "assetamount" in issuance:          
-                configuration.logger.log_issuance(block_height, block_time, issuance["asset"], to_satoshis(issuance["assetamount"]))
+                configuration.logger.log_issuance(block_height, block_time, issuance["asset"], to_satoshis(issuance["assetamount"]), tx_full["txid"], idx)
             else:
-                configuration.logger.log_issuance(block_height, block_time, issuance["asset"], None)
+                configuration.logger.log_issuance(block_height, block_time, issuance["asset"], None, tx_full["txid"], idx)
                 
 def log_outputs(configuration, tx_full, block_time, block_height):
-     for output in tx_full["vout"]:
+     for idx, output in enumerate(tx_full["vout"]):
         if "pegout_chain" in output["scriptPubKey"]:
-            configuration.logger.log_peg(block_height, block_time, (0-to_satoshis(output["value"])))
+            configuration.logger.log_peg(block_height, block_time, (0-to_satoshis(output["value"])), tx_full["txid"], idx)
         if "addresses" in output["scriptPubKey"] and output["scriptPubKey"]["addresses"][0] == LiquidConstants.liquid_fee_address:
             configuration.logger.log_fee(block_height, block_time, to_satoshis(output["value"]))
         if output["scriptPubKey"]["asm"] == "OP_RETURN" and "asset" in output and output["asset"] != LiquidConstants.btc_asset and "value" in output and output["value"] > 0:
-            configuration.logger.log_issuance(block_height, block_time, output["asset"], 0-to_satoshis(output["value"]))       
+            configuration.logger.log_issuance(block_height, block_time, output["asset"], 0-to_satoshis(output["value"]), tx_full["txid"], idx)       
 
 def main():
     configuration = Configuration()

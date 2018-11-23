@@ -6,7 +6,7 @@ def to_timestamp(time_as_datetime):
 
 class Logger:
 
-    SCHEMA_VERSION = 1 #Update this if the schema changes and the chain needs to be reindexed.
+    SCHEMA_VERSION = 2 #Update this if the schema changes and the chain needs to be reindexed.
     
     def reindex(self):
         self.conn.execute('''DELETE FROM missing_blocks''')
@@ -23,14 +23,20 @@ class Logger:
         self.conn.execute('''CREATE TABLE if not exists missing_blocks (datetime int, functionary int)''')
         self.conn.execute('''CREATE TABLE if not exists fees (block int, datetime int, amount int)''')
         self.conn.execute('''CREATE TABLE if not exists outages (end_time int, length int)''')
-        self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int)''')
-        self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL)''')
+        self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int, txid string, txindex int)''')
+        self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL, txid string, txindex int)''')
         self.conn.execute('''CREATE TABLE if not exists last_block (block int, datetime int)''')
         self.conn.execute('''CREATE TABLE if not exists schema_version (version int)''')
 
         schema_version = self.conn.execute("SELECT version FROM schema_version").fetchall()
-        if len(schema_version) ==0 or schema_version[0][0] != self.SCHEMA_VERSION:
+        if len(schema_version) == 0:
             self.reindex()
+        
+        elif schema_version[0] < 2:
+            self.conn.execute('DROP TABLE issuances')
+            self.conn.execute('DROP TABLE pegs')
+            self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int, txid string. index int)''')
+            self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL, txid string, index int)''')
         else:
             configuration = self.conn.execute("SELECT block, datetime FROM last_block").fetchall()
             if len(configuration) == 0:      
@@ -45,15 +51,14 @@ class Logger:
                 self.conn.execute('''DELETE FROM issuances WHERE datetime >= ? ''', (to_timestamp(self.last_time),)) 
         self.conn.commit()
 
-    def log_issuance(self, block_height, block_time, asset_id, amount):
-         self.conn.execute("INSERT INTO issuances VALUES (?, ?, ?, ?)", (block_height, to_timestamp(block_time), asset_id, amount))
+    def log_issuance(self, block_height, block_time, asset_id, amount, txid, txindex):
+         self.conn.execute("INSERT INTO issuances VALUES (?, ?, ?, ?, ?, ?)", (block_height, to_timestamp(block_time), asset_id, amount, txid, txindex))
 
-    def log_peg(self, block_height, block_time, amount):
-         self.conn.execute("INSERT INTO pegs VALUES (?, ?, ?)", (block_height, to_timestamp(block_time), amount))
+    def log_peg(self, block_height, block_time, amount, txid, txindex):
+         self.conn.execute("INSERT INTO pegs VALUES (?, ?, ?, ? , ?)", (block_height, to_timestamp(block_time), amount, txid, txindex))
 
     def log_fee(self, block_height, block_time, amount):
         self.conn.execute("INSERT INTO fees VALUES (?, ?, ?)", (block_height, to_timestamp(block_time), amount))
-
 
     def log_downtime(self, resume_time, downtime):
         self.conn.execute("INSERT INTO outages VALUES (?, ?)", (to_timestamp(resume_time), downtime))
