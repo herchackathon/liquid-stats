@@ -31,14 +31,6 @@ class LiquidConstants:
     def get_functionary_by_minute(minute):
         return LiquidConstants.functionary_mapping[minute % 15]
 
-class LiquidStats:
-
-    def __init__(self):
-        self.amount_in = 0
-        self.fee_total = 0
-        self.total_downtime = 0
-        self.missed_rounds = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-
 def round_time(dt=None, round_to=60):
    """Round a datetime object to any time lapse in seconds
    dt : datetime.datetime object, default now.
