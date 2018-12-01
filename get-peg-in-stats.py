@@ -26,7 +26,7 @@ def log_inputs(configuration, tx_full, block_time, block_height):
             configuration.logger.log_peg(block_height, block_time, to_satoshis(mainchain["vout"][input["vout"]]["value"]), tx_full["txid"], idx)
         if "issuance" in input:
             issuance = input["issuance"]
-            if "assetamount" not in issuance:          
+            if "assetamount" not in issuance:
                 assetamount = None
             else:
                 assetamount = to_satoshis(issuance["assetamount"])
@@ -39,7 +39,7 @@ def log_inputs(configuration, tx_full, block_time, block_height):
             else:
                 tokenamount = to_satoshis(issuance["tokenamount"])
             configuration.logger.log_issuance(block_height, block_time, issuance["asset"], assetamount, tx_full["txid"], idx, token, tokenamount)
-                
+
 def log_outputs(configuration, tx_full, block_time, block_height):
      for idx, output in enumerate(tx_full["vout"]):
         if "pegout_chain" in output["scriptPubKey"]:
@@ -47,7 +47,7 @@ def log_outputs(configuration, tx_full, block_time, block_height):
         if "addresses" in output["scriptPubKey"] and output["scriptPubKey"]["addresses"][0] == LiquidConstants.liquid_fee_address:
             configuration.logger.log_fee(block_height, block_time, to_satoshis(output["value"]))
         if output["scriptPubKey"]["asm"] == "OP_RETURN" and "asset" in output and output["asset"] != LiquidConstants.btc_asset and "value" in output and output["value"] > 0:
-            configuration.logger.log_issuance(block_height, block_time, output["asset"], 0-to_satoshis(output["value"]), tx_full["txid"], idx, None, None)       
+            configuration.logger.log_issuance(block_height, block_time, output["asset"], 0-to_satoshis(output["value"]), tx_full["txid"], idx, None, None)
 
 def main():
     configuration = Configuration()
@@ -80,10 +80,11 @@ def main():
                 log_inputs(configuration, tx_full, block_time, i)
                 log_outputs(configuration, tx_full, block_time, i)
             configuration.expected_block_time = block_time + timedelta(seconds=60)
-            
+
         configuration.save(last_height, block_time, block_hash)
         print "Complete at block {0}".format(last_height)
     else:
         print "Nothing new to parse."
 
-main()
+if __name__ == "__main__":
+    main()

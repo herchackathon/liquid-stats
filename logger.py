@@ -7,7 +7,7 @@ def to_timestamp(time_as_datetime):
 class Logger:
 
     SCHEMA_VERSION = 4 #Update this if the schema changes and the chain needs to be reindexed.
-    
+
     def reindex(self):
         self.last_block = 0
         self.last_time = None
@@ -17,7 +17,7 @@ class Logger:
         self.conn.execute('''DELETE FROM outages''')
         self.conn.execute('''DELETE FROM pegs''')
         self.conn.execute('''DELETE FROM issuances''')
-    
+
     def __init__(self):
         #Initialize Database if not created
         self.conn = sqlite3.connect('liquid.db')
@@ -43,15 +43,15 @@ class Logger:
                 self.reindex()
                 self.conn.execute('DROP TABLE issuances')
                 self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL, txid string, txindex int, token string NULL, tokenamount int NULL)''')
-            
+
             if schema_version[0][0] < 4:
                 self.reindex()
                 self.conn.execute("DROP TABLE last_block")
                 self.conn.execute('''CREATE TABLE if not exists last_block (block int, datetime int, block_hash string)''')
-                
+
             else:
                 configuration = self.conn.execute("SELECT block, datetime, block_hash FROM last_block").fetchall()
-                if len(configuration) == 0:      
+                if len(configuration) == 0:
                     self.reindex()
                 else:
                     self.last_time = datetime.fromtimestamp(configuration[0][1])
@@ -60,7 +60,7 @@ class Logger:
                     self.conn.execute('''DELETE FROM fees WHERE datetime >= ? ''', (to_timestamp(self.last_time),))
                     self.conn.execute('''DELETE FROM outages WHERE end_time >= ? ''', (to_timestamp(self.last_time),))
                     self.conn.execute('''DELETE FROM pegs WHERE datetime >= ? ''', (to_timestamp(self.last_time),))
-                    self.conn.execute('''DELETE FROM issuances WHERE datetime >= ? ''', (to_timestamp(self.last_time),)) 
+                    self.conn.execute('''DELETE FROM issuances WHERE datetime >= ? ''', (to_timestamp(self.last_time),))
                     self.block_hash = configuration[0][2]
             self.conn.commit()
 
@@ -78,7 +78,7 @@ class Logger:
 
     def log_missed_block(self, expected_block_time, functionary):
         self.conn.execute("INSERT INTO missing_blocks VALUES (?, ?)", (to_timestamp(expected_block_time), functionary))
-        
+
     def save_progress(self, last_block, last_timestamp, last_hash):
         self.conn.execute("DELETE FROM last_block")
         self.conn.execute("INSERT INTO last_block VALUES (?, ?, ?) ", (last_block, to_timestamp(last_timestamp), last_hash))
