@@ -1,31 +1,30 @@
 import argparse
-import configparser
 from datetime import datetime, timedelta
-
+import json
 from logger import Logger
 from utils import get_rpc, round_time
 
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Liquid staticstics analyzes the Liquid blockchain and logs useful information to track fees collected, assets issued, and outages.')
-    parser.add_argument("configfile", metavar='CONFIG', nargs='?', type=argparse.FileType('r'), default="config.ini", help="the configuration file to read from")
+    parser.add_argument("configfile", metavar='CONFIG', nargs='?', 
+        type=argparse.FileType('r'), default="config.json",
+         help="the configuration file to read from")
     args = parser.parse_args()
 
-    # Parse config file
-    config = configparser.ConfigParser()
-    config.read_file(args.configfile)
+    config = json.load(args.configfile)
 
     # Setup RPCs and logger
-    liquid_rpc = get_rpc(config["Liquid RPC"]["user"],
-                         config["Liquid RPC"]["password"],
-                         config["Liquid RPC"]["port"])
-    bitcoin_rpc = get_rpc(config["Bitcoin RPC"]["user"],
-                          config["Bitcoin RPC"]["password"],
-                          config["Bitcoin RPC"]["port"])
-    logger = Logger(config["General"]["database"], bitcoin_rpc, liquid_rpc)
+    liquid_rpc = get_rpc(config["liquidrpc"]["user"],
+                        config["liquidrpc"]["password"],
+                        config["liquidrpc"]["port"])
+    bitcoin_rpc = get_rpc(config["bitcoinrpc"]["user"],
+                        config["bitcoinrpc"]["password"],
+                        config["bitcoinrpc"]["port"])
+    logger = Logger(config["database"], bitcoin_rpc, liquid_rpc)
 
     # Parse functionary order from config
-    functionary_order = [int(i.strip()) for i in config["Liquid"]["functionary_order"].split(",")]
+    functionary_order = config["liquid"]["functionary_order"]
 
     # Determine range of blocks to log
     next_block_height = logger.next_block_height()
@@ -49,7 +48,7 @@ def main():
             logger.log_downtime(next_expected_block_time, curr_block_time, functionary_order)
             for tx_full in [liquid_rpc.getrawtransaction(tx, True) for tx in curr_block["tx"]]:
                 logger.log_inputs(tx_full, curr_block_time, curr_block_height)
-                logger.log_outputs(tx_full, curr_block_time, curr_block_height, config["Liquid"]["fee_address"], config["Liquid"]["bitcoin_asset_hex"])
+                logger.log_outputs(tx_full, curr_block_time, curr_block_height, config["liquid"]["fee_address"], config["liquid"]["bitcoin_asset_id"])
 
             # Expect the next block to be 60 seconds from current one
             next_expected_block_time = curr_block_time + timedelta(seconds=60)
