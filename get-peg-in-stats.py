@@ -1,90 +1,62 @@
-from liquidutils import LiquidConstants, get_liquid_rpc, get_bitcoin_rpc, round_time
-from configuration import Configuration
-import json
-import os.path
-import decimal
+import argparse
 from datetime import datetime, timedelta
-
-def to_satoshis(amount):
-    return int(amount * decimal.Decimal(10e8))
-
-def log_downtime(configuration, block_time):
-    downtime = 0
-    if configuration.expected_block_time != datetime.fromtimestamp(0):
-        while block_time > configuration.expected_block_time:
-            functionary = LiquidConstants.get_functionary_by_minute(configuration.expected_block_time.minute)
-            configuration.logger.log_missed_block(configuration.expected_block_time, functionary)
-            configuration.expected_block_time = configuration.expected_block_time + timedelta(seconds=60)
-            downtime = downtime + 1
-    if downtime > 15:
-        configuration.logger.log_downtime(block_time, downtime)
-
-def log_inputs(configuration, tx_full, block_time, block_height):
-    for idx, input in enumerate(tx_full["vin"]):
-        if "is_pegin" in input and input["is_pegin"]:
-            mainchain = get_bitcoin_rpc().decoderawtransaction(input["pegin_witness"][4])
-            configuration.logger.log_peg(block_height, block_time, to_satoshis(mainchain["vout"][input["vout"]]["value"]), tx_full["txid"], idx)
-        if "issuance" in input:
-            issuance = input["issuance"]
-            if "assetamount" not in issuance:
-                assetamount = None
-            else:
-                assetamount = to_satoshis(issuance["assetamount"])
-            if "token" not in issuance:
-                token = None
-            else:
-                token = issuance["token"]
-            if "tokenamount" not in issuance:
-                tokenamount = None
-            else:
-                tokenamount = to_satoshis(issuance["tokenamount"])
-            configuration.logger.log_issuance(block_height, block_time, issuance["asset"], assetamount, tx_full["txid"], idx, token, tokenamount)
-
-def log_outputs(configuration, tx_full, block_time, block_height):
-     for idx, output in enumerate(tx_full["vout"]):
-        if "pegout_chain" in output["scriptPubKey"]:
-            configuration.logger.log_peg(block_height, block_time, (0-to_satoshis(output["value"])), tx_full["txid"], idx)
-        if "addresses" in output["scriptPubKey"] and output["scriptPubKey"]["addresses"][0] == LiquidConstants.liquid_fee_address:
-            configuration.logger.log_fee(block_height, block_time, to_satoshis(output["value"]))
-        if output["scriptPubKey"]["asm"] == "OP_RETURN" and "asset" in output and output["asset"] != LiquidConstants.btc_asset and "value" in output and output["value"] > 0:
-            configuration.logger.log_issuance(block_height, block_time, output["asset"], 0-to_satoshis(output["value"]), tx_full["txid"], idx, None, None)
+import json
+from logger import Logger
+from utils import get_rpc, round_time
 
 def main():
-    configuration = Configuration()
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Liquid staticstics analyzes the Liquid blockchain and logs useful information to track fees collected, assets issued, and outages.')
+    parser.add_argument("configfile", metavar='CONFIG', nargs='?', 
+        type=argparse.FileType('r'), default="config.json",
+         help="the configuration file to read from")
+    args = parser.parse_args()
 
-    liquid_rpc = get_liquid_rpc()
+    config = json.load(args.configfile)
 
-    i = configuration.start_at
-    last_height = liquid_rpc.getblockcount()
-    if configuration.logger.last_block != None:
-        block_hash = liquid_rpc.getblockhash(configuration.logger.last_block)
-        if block_hash != configuration.logger.block_hash:
-            configuration.logger.reindex()
+    # Setup RPCs and logger
+    liquid_rpc = get_rpc(config["liquidrpc"]["user"],
+                        config["liquidrpc"]["password"],
+                        config["liquidrpc"]["port"])
+    bitcoin_rpc = get_rpc(config["bitcoinrpc"]["user"],
+                        config["bitcoinrpc"]["password"],
+                        config["bitcoinrpc"]["port"])
+    logger = Logger(config["database"], bitcoin_rpc, liquid_rpc)
+
+    # Parse functionary order from config
+    functionary_order = config["liquid"]["functionary_order"]
+
+    # Determine range of blocks to log
+    next_block_height = logger.next_block_height()
+    end_block_height = liquid_rpc.getblockcount()
+
+    # Used to determine downtime
+    next_expected_block_time = logger.next_expected_block_time()
 
     # Get last known block again and see if it matches the hash, otherwise set it to 0
+    if next_block_height <= end_block_height:
+        for curr_block_height in range(next_block_height, end_block_height+1):
+            curr_block_hash = liquid_rpc.getblockhash(curr_block_height)
+            curr_block = liquid_rpc.getblock(curr_block_hash)
+            curr_block_time = round_time(datetime.utcfromtimestamp(curr_block["time"]))
 
-    if configuration.start_at <= last_height:
-        for i in range(configuration.start_at, last_height+1):
-            block_hash = liquid_rpc.getblockhash(i)
-            block = liquid_rpc.getblock(block_hash)
-            block_time = round_time(datetime.utcfromtimestamp(block["time"]))
+            # Log to console and save progress every 1000 blocks
+            if curr_block_height % 1000 == 0:
+                print("Block {0}".format(curr_block_height))
+                logger.save_progress(curr_block_height, curr_block_time, curr_block_hash)
 
-            if i % 1000 == 0:
-                print "Block {0}".format(i)
-                configuration.save(i, block_time, block_hash)
+            logger.log_downtime(next_expected_block_time, curr_block_time, functionary_order)
+            for tx_full in [liquid_rpc.getrawtransaction(tx, True) for tx in curr_block["tx"]]:
+                logger.log_inputs(tx_full, curr_block_time, curr_block_height)
+                logger.log_outputs(tx_full, curr_block_time, curr_block_height, config["liquid"]["fee_address"], config["liquid"]["bitcoin_asset_id"])
 
-            log_downtime(configuration, block_time)
-            liquid_rpc = get_liquid_rpc()
-            for tx in block["tx"]:
-                tx_full = liquid_rpc.getrawtransaction(tx, True)
-                log_inputs(configuration, tx_full, block_time, i)
-                log_outputs(configuration, tx_full, block_time, i)
-            configuration.expected_block_time = block_time + timedelta(seconds=60)
+            # Expect the next block to be 60 seconds from current one
+            next_expected_block_time = curr_block_time + timedelta(seconds=60)
 
-        configuration.save(last_height, block_time, block_hash)
-        print "Complete at block {0}".format(last_height)
+        logger.save_progress(end_block_height, curr_block_time, curr_block_hash)
+        print("Complete at block {0}".format(end_block_height))
     else:
-        print "Nothing new to parse."
+        print("Nothing new to parse.")
 
 if __name__ == "__main__":
     main()
