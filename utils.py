@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-
+import decimal
 from bitcoinrpc.authproxy import AuthServiceProxy
 
 def get_rpc(user, password, port):
