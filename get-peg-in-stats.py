@@ -3,24 +3,32 @@ from datetime import datetime, timedelta
 import json
 from logger import Logger
 from utils import get_rpc, round_time
+import requests
 
-def main():
+def get_config():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Liquid staticstics analyzes the Liquid blockchain and logs useful information to track fees collected, assets issued, and outages.')
     parser.add_argument("configfile", metavar='CONFIG', nargs='?', 
         type=argparse.FileType('r'), default="config.json",
          help="the configuration file to read from")
     args = parser.parse_args()
-
     config = json.load(args.configfile)
+    return config
 
-    # Setup RPCs and logger
+def get_rpc_proxy(config):
+    
+    # Setup RPCs and logge
     liquid_rpc = get_rpc(config["liquidrpc"]["user"],
                         config["liquidrpc"]["password"],
                         config["liquidrpc"]["port"])
     bitcoin_rpc = get_rpc(config["bitcoinrpc"]["user"],
                         config["bitcoinrpc"]["password"],
                         config["bitcoinrpc"]["port"])
+    return liquid_rpc, bitcoin_rpc
+
+def main():
+    config = get_config()
+    liquid_rpc, bitcoin_rpc = get_rpc_proxy(config)
     logger = Logger(config["database"], bitcoin_rpc, liquid_rpc)
 
     # Parse functionary order from config
@@ -45,7 +53,13 @@ def main():
                 print("Block {0}".format(curr_block_height))
                 logger.save_progress(curr_block_height, curr_block_time, curr_block_hash)
 
+                #Reload RPCs since timeout frequently
+
+                # Setup RPCs and logger
+                logger.liquid_rpc, logger.bitcoin_rpc = get_rpc_proxy(config)
+
             logger.log_downtime(next_expected_block_time, curr_block_time, functionary_order)
+
             for tx_full in [liquid_rpc.getrawtransaction(tx, True) for tx in curr_block["tx"]]:
                 logger.log_inputs(tx_full, curr_block_time, curr_block_height)
                 logger.log_outputs(tx_full, curr_block_time, curr_block_height, config["liquid"]["fee_address"], config["liquid"]["bitcoin_asset_id"])
@@ -58,5 +72,9 @@ def main():
     else:
         print("Nothing new to parse.")
 
+    print("Updating Federation Wallet")
+    logger.update_wallet()
+
+   
 if __name__ == "__main__":
     main()
