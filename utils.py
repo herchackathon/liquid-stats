@@ -1,12 +1,30 @@
 from datetime import datetime, timedelta
 import decimal
 from bitcoinrpc.authproxy import AuthServiceProxy
+import requests
+
+def get_block_from_txid(txid):
+    tx_template = "https://blockstream.info/api/tx/{0}"
+    tx_info = get_json_from_url(tx_template.format(txid))
+    return tx_info["status"]["block_hash"], get_block_from_hash(tx_info["status"]["block_hash"])
+
+def get_block_from_hash(block_hash):
+    block_template = "https://blockstream.info/api/block/{0}"
+    block_info = get_json_from_url(block_template.format(block_hash))
+    return block_info["timestamp"]
+
+def get_json_from_url(url):
+    response = requests.get(url)
+    if (response.ok):
+        return response.json()
+    else:
+        raise SystemError("No response from server.")
 
 def get_rpc(user, password, port):
     return AuthServiceProxy("http://{}:{}@localhost:{}".format(user, password, port))
 
 def to_satoshis(btc_amt):
-    return int(btc_amt * decimal.Decimal(10e8))
+    return int(btc_amt * decimal.Decimal(1e8))
 
 def to_timestamp(time_as_datetime):
     return int((time_as_datetime - datetime.fromtimestamp(0)).total_seconds())
