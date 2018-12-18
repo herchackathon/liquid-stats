@@ -1,0 +1,22 @@
+[Unit]
+Description=Stats node
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=/home/bs
+ExecStartPre=/usr/bin/touch /home/bs/liquid.db
+ExecStartPre=/usr/bin/docker pull glregistry.blockstream.io/liquid/stats:latest
+ExecStart=/usr/bin/docker run \
+  --network=host \
+  --pid=host \
+  --name=stats \
+  --tmpfs /tmp \
+  --rm \
+  -v /home/bs/liquid.db:/usr/src/app/liquid.db:rw \
+  "glregistry.blockstream.io/liquid/stats:latest"
+ExecStop=-/usr/bin/docker rm -f stats
+
+[Install]
+WantedBy=multi-user.target
