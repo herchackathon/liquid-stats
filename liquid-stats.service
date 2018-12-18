@@ -7,7 +7,7 @@ After=network-online.target
 Type=oneshot
 Environment=HOME=/home/bs
 ExecStartPre=/usr/bin/touch /home/bs/liquid.db
-ExecStartPre=/usr/bin/docker pull glregistry.blockstream.io/liquid/stats:latest
+ExecStartPre=/usr/bin/docker pull blockstream/liquid-stats:latest
 ExecStart=/usr/bin/docker run \
   --network=host \
   --pid=host \
@@ -15,7 +15,7 @@ ExecStart=/usr/bin/docker run \
   --tmpfs /tmp \
   --rm \
   -v /home/bs/liquid.db:/usr/src/app/liquid.db:rw \
-  "glregistry.blockstream.io/liquid/stats:latest"
+  "blockstream/liquid-stats:latest"
 ExecStop=-/usr/bin/docker rm -f stats
 
 [Install]
