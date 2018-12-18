@@ -1,0 +1,20 @@
+image: docker:latest
+stages:
+  - build
+
+before_script:
+  - docker info
+  - docker login -u $REGISTRY_USER -p $REGISTRY_PASSWORD glregistry.blockstream.io
+
+build_container:
+  only:
+    - branches@liquid/stats
+  stage: build
+  script:
+    - docker pull glregistry.blockstream.io/liquid/stats:latest || true
+    - docker build
+        --cache-from glregistry.blockstream.io/liquid/stats:latest
+        -f Dockerfile
+        -t glregistry.blockstream.io/liquid/stats:latest .
+    - docker push glregistry.blockstream.io/liquid/stats:latest
+    - docker rmi glregistry.blockstream.io/liquid/stats:latest

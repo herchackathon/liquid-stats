@@ -19,3 +19,20 @@ Run get-peg-in-stats.py to parse the Liquid chain. Results are logged to "liquid
 * fees - tracks fees collected in each block
 
 The tool remembers where it last ran and can be run periodically to get more recent updates.
+
+# systemd
+
+## `liquid-stats.service`
+
+This systemd service file is used to control the liquid-stats container. Before
+running, it first pulls the latest version, which allows us to simply push a new
+container to the registry without having to SSH into any boxes to deploy.
+
+It mounts `/home/bs/liquid.db` as the DB file, which allows us to use this file
+for other services.
+
+## `liquid-stats.timer`
+
+This systemd timer simply triggers the service with the same name every 2 mins.
+A `systemctl enable liquid-stats.timer && systemctl start liquid-stats.timer`
+makes sure the timer is started, even after reboots.
