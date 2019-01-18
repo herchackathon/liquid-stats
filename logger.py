@@ -4,7 +4,7 @@ from utils import to_satoshis, to_timestamp, get_block_from_txid, get_json_from_
 
 class Logger:
 
-    SCHEMA_VERSION = 5 #Update this if the schema changes and the chain needs to be reindexed.
+    SCHEMA_VERSION = 6 #Update this if the schema changes and the chain needs to be reindexed.
 
     def reindex(self):
         self.last_block = None
@@ -49,22 +49,21 @@ class Logger:
             self.reindex()
         else:
             if schema_version[0][0] < 2:
-                self.reindex()
                 self.conn.execute('DROP TABLE issuances')
                 self.conn.execute('DROP TABLE pegs')
                 self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int, txid string. index int)''')
                 self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL, txid string, txindex int)''')
             if schema_version[0][0] < 3:
-                self.reindex()
                 self.conn.execute('DROP TABLE issuances')
                 self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL, txid string, txindex int, token string NULL, tokenamount int NULL)''')
 
             if schema_version[0][0] < 4:
-                self.reindex()
                 self.conn.execute("DROP TABLE last_block")
                 self.conn.execute('''CREATE TABLE if not exists last_block (block int, datetime int, block_hash string)''')
             if schema_version[0][0] < 5:
                 self.conn.execute('''CREATE TABLE if not exists wallet (txid string, txindex int, amount int, block_hash string, block_timestamp string, spent_txid string NULL, spent_index int NULL)''')
+                self.reindex()
+            if schema_version[0][0] == 5:
                 self.reindex()
             else:
                 configuration = self.conn.execute("SELECT block, datetime, block_hash FROM last_block").fetchall()

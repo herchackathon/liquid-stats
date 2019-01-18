@@ -1,9 +1,9 @@
 [Unit]
-Description=Run stats every 2 minutes, 1 minute after boot
+Description=Run stats every 5 minutes, 1 minute after boot
 
 [Timer]
 OnBootSec=1min
-OnUnitActiveSec=2min
+OnUnitActiveSec=5min
 
 [Install]
 WantedBy=timers.target

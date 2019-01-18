@@ -33,6 +33,6 @@ for other services.
 
 ## `liquid-stats.timer`
 
-This systemd timer simply triggers the service with the same name every 2 mins.
+This systemd timer simply triggers the service with the same name every 5 mins.
 A `systemctl enable liquid-stats.timer && systemctl start liquid-stats.timer`
 makes sure the timer is started, even after reboots.
