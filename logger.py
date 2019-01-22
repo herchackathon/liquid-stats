@@ -85,7 +85,7 @@ class Logger:
                         self.last_block is not None and self.block_hash is not None and \
                         self.liquid_rpc.getblockhash(self.last_block) != self.block_hash
                 if should_reindex:
-                    logger.reindex()
+                    self.reindex()
             self.conn.commit()
 
     def insert_issuance(self, block_height, block_time, asset_id, amount, txid, txindex, token, tokenamount):
