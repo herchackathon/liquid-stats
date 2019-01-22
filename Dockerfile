@@ -9,4 +9,4 @@ COPY . .
 
 VOLUME /usr/src/app/liquid.db
 
-CMD [ "python", "./get-peg-in-stats.py" ]
+CMD [ "python", "./parse-chain.py" ]

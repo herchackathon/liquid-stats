@@ -4,7 +4,7 @@ from utils import to_satoshis, to_timestamp, get_block_from_txid, get_json_from_
 
 class Logger:
 
-    SCHEMA_VERSION = 6 #Update this if the schema changes and the chain needs to be reindexed.
+    SCHEMA_VERSION = 7 #Update this if the schema changes and the chain needs to be reindexed.
 
     def reindex(self):
         self.last_block = None
@@ -63,7 +63,7 @@ class Logger:
             if schema_version[0][0] < 5:
                 self.conn.execute('''CREATE TABLE if not exists wallet (txid string, txindex int, amount int, block_hash string, block_timestamp string, spent_txid string NULL, spent_index int NULL)''')
                 self.reindex()
-            if schema_version[0][0] == 5:
+            if schema_version[0][0] == 5 or schema_version[0][0] == 6:
                 self.reindex()
             else:
                 configuration = self.conn.execute("SELECT block, datetime, block_hash FROM last_block").fetchall()
@@ -85,7 +85,7 @@ class Logger:
                         self.last_block is not None and self.block_hash is not None and \
                         self.liquid_rpc.getblockhash(self.last_block) != self.block_hash
                 if should_reindex:
-                    logger.reindex()
+                    self.reindex()
             self.conn.commit()
 
     def insert_issuance(self, block_height, block_time, asset_id, amount, txid, txindex, token, tokenamount):
@@ -116,7 +116,7 @@ class Logger:
                 self.insert_missed_block(expected_block_time, functionary)
                 expected_block_time += timedelta(seconds=60)
                 downtime += 1
-        if downtime > 15:
+        if downtime >= 5:
             self.insert_downtime(block_time, downtime)
 
     def log_inputs(self, tx_full, block_time, block_height):
