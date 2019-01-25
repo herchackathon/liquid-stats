@@ -47,7 +47,10 @@ def main():
             curr_block_hash = liquid_rpc.getblockhash(curr_block_height)
             curr_block = liquid_rpc.getblock(curr_block_hash)
             curr_block_time = round_time(datetime.utcfromtimestamp(curr_block["time"]))
-
+            #In case rounding doesn't work when clocks get out of sync, and we get two blocks for the same time, we should assume
+            #the next block is for the next minute
+            if next_expected_block_time != None and curr_block_time < next_expected_block_time:
+                curr_block_time = next_expected_block_time
             # Log to console and save progress every 1000 blocks
             if curr_block_height % 1000 == 0:
                 print("Block {0}".format(curr_block_height))

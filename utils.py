@@ -29,7 +29,7 @@ def to_satoshis(btc_amt):
 def to_timestamp(time_as_datetime):
     return int((time_as_datetime - datetime.fromtimestamp(0)).total_seconds())
 
-def round_time(dt=None, round_to=60):
+def round_time(dt=None, round_to=60, round_point=15):
     """Round a datetime object to any time lapse in seconds
     dt : datetime.datetime object, default now.
     roundTo : Closest number of seconds to round to, default 1 minute.
@@ -37,5 +37,5 @@ def round_time(dt=None, round_to=60):
     """
     if dt == None : dt = datetime.now()
     seconds = (dt.replace(tzinfo=None) - dt.min).seconds
-    rounding = (seconds+round_to/2) // round_to * round_to
+    rounding = (seconds+round_to-round_point) // round_to * round_to
     return dt + timedelta(0,rounding-seconds,-dt.microsecond)
