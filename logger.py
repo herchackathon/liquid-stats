@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 import sqlite3
 from utils import to_satoshis, to_timestamp, get_block_from_txid, get_json_from_url, get_block_from_hash
-from queue import Queue
 
 class Logger:
 
