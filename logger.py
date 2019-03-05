@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import sqlite3
 from utils import to_satoshis, to_timestamp, get_block_from_txid, get_json_from_url, get_block_from_hash
+from queue import Queue
 
 class Logger:
 
@@ -173,7 +174,13 @@ class Logger:
     outspend_template = "https://blockstream.info/api/tx/{0}/outspend/{1}"
     tx_template = "https://blockstream.info/api/tx/{0}"
 
+    def add_donation_utxos(self, address):
+        txs = get_json_from_url("https://blockstream.info/api/address/{0}/utxo".format(address))
+        for tx in txs:
+            self.insert_wallet_receieve(tx["txid"], tx["vout"], tx["value"], tx["status"]["block_hash"], tx["status"]["block_time"])
+        self.conn.commit()
     def update_wallet(self):
+
         #check what wallet transactions are spent
         for wallet_utxo in self.get_wallet_utxos():
             utxo_status = get_json_from_url(self.outspend_template.format(wallet_utxo[0], wallet_utxo[1]))
@@ -184,4 +191,10 @@ class Logger:
                 for idx, vout in enumerate(spent_tx["vout"]):
                     if vout["scriptpubkey_address"] == "3EiAcrzq1cELXScc98KeCswGWZaPGceT1d":
                         self.insert_wallet_receieve(utxo_status["txid"], idx, vout["value"], utxo_status["status"]["block_hash"], block_timestamp)
+                #TODO: Need to check to see if the spent tx is spent or not, and repeat
             self.conn.commit()
+        #find donations that are unmixed
+        self.add_donation_utxos("3EiAcrzq1cELXScc98KeCswGWZaPGceT1d")
+        self.add_donation_utxos("3G6neksSBMp51kHJ2if8SeDUrzT8iVETWT")
+       
+            
