@@ -95,6 +95,8 @@ class Logger:
         self.conn.execute("INSERT INTO pegs VALUES (?, ?, ?, ? , ?)", (block_height, to_timestamp(block_time), amount, txid, txindex))
 
     def insert_wallet_receieve(self, txid, txindex, amount, block_height, block_timestamp):
+        if block_height == None:
+            return
         cursor = self.conn.execute("SELECT COUNT(*) FROM wallet WHERE txid=? AND txindex=?", (txid ,txindex))
         if cursor.fetchone()[0] == 0:
             self.conn.execute("INSERT INTO wallet VALUES (?, ?, ?, ?, ?, ?, ?)",(txid, txindex, amount, block_height, block_timestamp, None, None))
