@@ -180,7 +180,18 @@ class Logger:
         for tx in txs:
             self.insert_wallet_receieve(tx["txid"], tx["vout"], tx["value"], tx["status"]["block_hash"], tx["status"]["block_time"])
         self.conn.commit()
+
+    def get_unconfirmed(self):
+        result = self.conn.execute("SELECT txid, txindex FROM wallet WHERE block_hash IS NULL")
+        return result
+
     def update_wallet(self):
+
+        #check for unconfirmed transactions that now have blocks
+        for unconfirmed_utxo in self.get_unconfirmed():
+            utxo_status = get_json_from_url(self.tx_template.format(unconfirmed_utxo[0]))
+            if utxo_status["status"]["confirmed"] == True:
+                self.conn.execute("UPDATE wallet SET block_hash=?, block_timestamp=?", (utxo_status["status"]["block_hash"], utxo_status["status"]["block_time"]))
 
         #check what wallet transactions are spent
         for wallet_utxo in self.get_wallet_utxos():
