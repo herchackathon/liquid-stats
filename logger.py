@@ -4,7 +4,7 @@ from utils import to_satoshis, to_timestamp, get_block_from_txid, get_json_from_
 
 class Logger:
 
-    SCHEMA_VERSION = 8 #Update this if the schema changes and the chain needs to be reindexed.
+    SCHEMA_VERSION = 9 #Update this if the schema changes and the chain needs to be reindexed.
 
     def reindex(self):
         self.last_block = None
@@ -42,28 +42,23 @@ class Logger:
             self.conn.execute('''CREATE TABLE if not exists missing_blocks (datetime int, functionary int)''')
             self.conn.execute('''CREATE TABLE if not exists fees (block int, datetime int, amount int)''')
             self.conn.execute('''CREATE TABLE if not exists outages (end_time int, length int)''')
-            self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int, txid string, txindex int)''')
+            self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int, txid string, txindex int, bitcoinaddress string, bitcointxid string NULL, bitcoinindex int NULL)''')
             self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL, txid string, txindex int, token string NULL, tokenamount int NULL)''')
             self.conn.execute('''CREATE TABLE if not exists last_block (block int, datetime int, block_hash string)''')
             self.conn.execute('''CREATE TABLE if not exists wallet (txid string, txindex int, amount int, block_hash string, block_timestamp string, spent_txid string NULL, spent_index int NULL)''')
             self.reindex()
         else:
-            if schema_version[0][0] < 2:
-                self.conn.execute('DROP TABLE issuances')
-                self.conn.execute('DROP TABLE pegs')
-                self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int, txid string. index int)''')
-                self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL, txid string, txindex int)''')
             if schema_version[0][0] < 3:
                 self.conn.execute('DROP TABLE issuances')
                 self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL, txid string, txindex int, token string NULL, tokenamount int NULL)''')
-
             if schema_version[0][0] < 4:
                 self.conn.execute("DROP TABLE last_block")
                 self.conn.execute('''CREATE TABLE if not exists last_block (block int, datetime int, block_hash string)''')
             if schema_version[0][0] < 5:
                 self.conn.execute('''CREATE TABLE if not exists wallet (txid string, txindex int, amount int, block_hash string, block_timestamp string, spent_txid string NULL, spent_index int NULL)''')
-                self.reindex()
-            if schema_version[0][0] == 5 or schema_version[0][0] == 6 or schema_version[0][0] == 7:
+            if schema_version[0][0] < 9:
+                self.conn.execute('DROP TABLE pegs')
+                self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int, txid string, txindex int, bitcoinaddress string, bitcointxid string NULL, bitcoinindex int NULL)''')
                 self.reindex()
             else:
                 configuration = self.conn.execute("SELECT block, datetime, block_hash FROM last_block").fetchall()
@@ -91,8 +86,8 @@ class Logger:
     def insert_issuance(self, block_height, block_time, asset_id, amount, txid, txindex, token, tokenamount):
         self.conn.execute("INSERT INTO issuances VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (block_height, to_timestamp(block_time), asset_id, amount, txid, txindex, token, tokenamount))
 
-    def insert_peg(self, block_height, block_time, amount, txid, txindex):
-        self.conn.execute("INSERT INTO pegs VALUES (?, ?, ?, ? , ?)", (block_height, to_timestamp(block_time), amount, txid, txindex))
+    def insert_peg(self, block_height, block_time, amount, txid, txindex, bitcoinaddress, bitcointxid=None, bitcointxindex=None):
+        self.conn.execute("INSERT INTO pegs VALUES (?, ?, ?, ? , ?, ?, ?, ?)", (block_height, to_timestamp(block_time), amount, txid, txindex, bitcoinaddress, bitcointxid, bitcointxindex))
 
     def insert_wallet_receieve(self, txid, txindex, amount, block_height, block_timestamp):
         if block_height == None:
@@ -110,6 +105,9 @@ class Logger:
     def insert_missed_block(self, expected_block_time, functionary):
         self.conn.execute("INSERT INTO missing_blocks VALUES (?, ?)", (to_timestamp(expected_block_time), functionary))
 
+    def insert_processed_peg_out(self, address, amount, txid, txindex):
+        return NotImplementedError()
+
     def log_downtime(self, expected_block_time, block_time, functionary_order):
         downtime = 0
         if expected_block_time != datetime.fromtimestamp(0):
@@ -125,8 +123,9 @@ class Logger:
         for idx, input in enumerate(tx_full["vin"]):
             if "is_pegin" in input and input["is_pegin"]:
                 mainchain = self.bitcoin_rpc.decoderawtransaction(input["pegin_witness"][4])
+                address = self.bitcoin_rpc.decodescript(input["pegin_witness"][3])["p2sh"]
                 self.insert_peg(block_height, block_time, to_satoshis(mainchain["vout"][input["vout"]]["value"]), tx_full["txid"],
-                     idx)
+                     idx, address, input["txid"], input["vout"])
                 block_hash, block_timestamp = get_block_from_txid(input["txid"])
                 self.insert_wallet_receieve(input["txid"], input["vout"], to_satoshis(mainchain["vout"][input["vout"]]["value"]),
                      block_hash, block_timestamp)
@@ -149,12 +148,13 @@ class Logger:
     def log_outputs(self, tx_full, block_time, block_height, liquid_fee_address, bitcoin_asset_hex):
          for idx, output in enumerate(tx_full["vout"]):
             if "pegout_chain" in output["scriptPubKey"]:
-                self.insert_peg(block_height, block_time, (0-to_satoshis(output["value"])), tx_full["txid"], idx)
+                self.insert_peg(block_height, block_time, (0-to_satoshis(output["value"])), tx_full["txid"], idx, output["scriptPubKey"]["pegout_addresses"][0], None, None)
             if "addresses" in output["scriptPubKey"] and output["scriptPubKey"]["addresses"][0] == liquid_fee_address:
                 self.insert_fee(block_height, block_time, to_satoshis(output["value"]))
             if output["scriptPubKey"]["asm"] == "OP_RETURN" and "asset" in output and output["asset"] != bitcoin_asset_hex and "value" in output and output["value"] > 0:
                 self.insert_issuance(block_height, block_time, output["asset"], 0-to_satoshis(output["value"]), tx_full["txid"], idx, None, None)
-
+            if output["scriptPubKey"]["asm"] == "OP_RETURN" and "asset" in output and output["asset"] == bitcoin_asset_hex and "value" in output and output["value"] > 0:
+                self.insert_peg(block_height, block_time, (0 - to_satoshis(output["value"])), tx_full["txid"], idx, "", None, None)
 
     def save_progress(self, last_block, last_timestamp, last_hash):
         self.conn.execute("DELETE FROM last_block")
@@ -185,6 +185,15 @@ class Logger:
         result = self.conn.execute("SELECT txid, txindex FROM wallet WHERE block_hash IS NULL")
         return result
 
+
+    def set_pegout(self, txid, idx, value, address):
+        #is this utxo already accounted for?
+        processed = self.conn.execute("SELECT COUNT(*) FROM pegs WHERE amount < 0 AND bitcointxid=? AND bitcoinindex=?", (txid, idx)).fetchone()[0]
+        if processed:
+            return 
+        tx = self.conn.execute("SELECT txid, txindex FROM pegs WHERE bitcoinaddress=? AND amount=? AND bitcointxid IS NULL ORDER BY datetime DESC LIMIT 1", (address, 0-value)).fetchone()
+        self.conn.execute("UPDATE pegs SET bitcointxid=?, bitcoinindex=? WHERE txid=? AND txindex=?", (txid, idx, tx[0], tx[1]))
+
     def update_wallet(self):
 
         #check for unconfirmed transactions that now have blocks
@@ -203,6 +212,8 @@ class Logger:
                 for idx, vout in enumerate(spent_tx["vout"]):
                     if vout["scriptpubkey_address"] == "3EiAcrzq1cELXScc98KeCswGWZaPGceT1d":
                         self.insert_wallet_receieve(utxo_status["txid"], idx, vout["value"], utxo_status["status"]["block_hash"], block_timestamp)
+                    else: #this should be a pegout
+                        self.set_pegout(utxo_status["txid"], idx, vout["value"], vout["scriptpubkey_address"])
                 #TODO: Need to check to see if the spent tx is spent or not, and repeat
             self.conn.commit()
         #find donations that are unmixed
