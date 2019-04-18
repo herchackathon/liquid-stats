@@ -205,7 +205,7 @@ class Logger:
         #check what wallet transactions are spent
         for wallet_utxo in self.get_wallet_utxos():
             utxo_status = get_json_from_url(self.outspend_template.format(wallet_utxo[0], wallet_utxo[1]))
-            if utxo_status["spent"]:
+            if utxo_status["spent"] and utxo_status["status"]["confirmed"] == True:
                 self.spend_wallet_utxo(wallet_utxo[0], wallet_utxo[1], utxo_status["txid"], utxo_status["vin"])
                 spent_tx = get_json_from_url(self.tx_template.format(utxo_status["txid"]))
                 block_timestamp = get_block_from_hash(utxo_status["status"]["block_hash"])
