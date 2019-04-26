@@ -4,7 +4,7 @@ from utils import to_satoshis, to_timestamp, get_block_from_txid, get_json_from_
 
 class Logger:
 
-    SCHEMA_VERSION = 9 #Update this if the schema changes and the chain needs to be reindexed.
+    SCHEMA_VERSION = 10 #Update this if the schema changes and the chain needs to be reindexed.
 
     def reindex(self):
         self.last_block = None
@@ -46,6 +46,7 @@ class Logger:
             self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL, txid string, txindex int, token string NULL, tokenamount int NULL)''')
             self.conn.execute('''CREATE TABLE if not exists last_block (block int, datetime int, block_hash string)''')
             self.conn.execute('''CREATE TABLE if not exists wallet (txid string, txindex int, amount int, block_hash string, block_timestamp string, spent_txid string NULL, spent_index int NULL)''')
+            self.conn.execute('''CREATE TABLE if not exists txspends (txid string, fee int, block_hash string, datetime int)''')
             self.reindex()
         else:
             if schema_version[0][0] < 3:
@@ -59,6 +60,8 @@ class Logger:
             if schema_version[0][0] < 9:
                 self.conn.execute('DROP TABLE pegs')
                 self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int, txid string, txindex int, bitcoinaddress string, bitcointxid string NULL, bitcoinindex int NULL)''')
+            if schema_version[0][0] < 10:
+                self.conn.execute('''CREATE TABLE if not exists txspends (txid string, fee int, block_hash string, datetime int)''')
                 self.reindex()
             else:
                 configuration = self.conn.execute("SELECT block, datetime, block_hash FROM last_block").fetchall()
@@ -171,20 +174,37 @@ class Logger:
 
     def spend_wallet_utxo(self, txid, txindex, spenttxid, spentindex):
         self.conn.execute("UPDATE wallet SET spent_txid=?, spent_index=? WHERE txid=? AND txindex=?", (spenttxid, spentindex, txid, txindex))
+        logged_fee = self.conn.execute("SELECT COUNT(*) FROM txspends WHERE txid=?", (spenttxid,)).fetchone()[0]
+        if logged_fee == 0:
+            tx_details = get_json_from_url("https://blockstream.info/api/tx/{0}".format(spenttxid))
+            self.conn.execute("INSERT INTO txspends (txid, fee, block_hash, datetime) VALUES (?, ?, ?, ?)", (spenttxid, tx_details["fee"], tx_details["status"]["block_hash"], tx_details["status"]["block_time"]))
 
     outspend_template = "https://blockstream.info/api/tx/{0}/outspend/{1}"
     tx_template = "https://blockstream.info/api/tx/{0}"
 
-    def add_donation_utxos(self, address):
-        txs = get_json_from_url("https://blockstream.info/api/address/{0}/utxo".format(address))
-        for tx in txs:
-            self.insert_wallet_receieve(tx["txid"], tx["vout"], tx["value"], tx["status"]["block_hash"], tx["status"]["block_time"])
-        self.conn.commit()
+    def add_donation_utxos(self, address, block_height):
+        print("Adding TXOs from {0}".format(address))
+        txs = []
+        last_txid = None
+        #TODO stop processing when we find a transaction we know about already
+        while(last_txid == None or len(txs) > 0):
+            if last_txid == None:
+                txs = get_json_from_url("https://blockstream.info/api/address/{0}/txs".format(address))
+            else:
+                txs = get_json_from_url("https://blockstream.info/api/address/{0}/txs/chain/{1}".format(address, last_txid))
+            for tx in txs:
+                last_txid = tx["txid"]
+                if tx["status"]["confirmed"] == True and tx["status"]["block_height"]+100 <= block_height:
+                    for idx, output in enumerate(tx["vout"]):
+                        if output["scriptpubkey_address"] == address:
+                            count = self.conn.execute("SELECT COUNT(*) FROM wallet WHERE txid=? AND txindex=?", (tx["txid"], idx)).fetchone()[0]
+                            if count == 0:
+                                self.insert_wallet_receieve(tx["txid"], idx, output["value"], tx["status"]["block_hash"], tx["status"]["block_time"])
+                                self.conn.commit()
 
     def get_unconfirmed(self):
         result = self.conn.execute("SELECT txid, txindex FROM wallet WHERE block_hash IS NULL")
         return result
-
 
     def set_pegout(self, txid, idx, value, address):
         #is this utxo already accounted for?
@@ -196,28 +216,21 @@ class Logger:
 
     def update_wallet(self):
 
-        #check for unconfirmed transactions that now have blocks
-        for unconfirmed_utxo in self.get_unconfirmed():
-            utxo_status = get_json_from_url(self.tx_template.format(unconfirmed_utxo[0]))
-            if utxo_status["status"]["confirmed"] == True:
-                self.conn.execute("UPDATE wallet SET block_hash=?, block_timestamp=?", (utxo_status["status"]["block_hash"], utxo_status["status"]["block_time"]))
-
-        #check what wallet transactions are spent
-        for wallet_utxo in self.get_wallet_utxos():
-            utxo_status = get_json_from_url(self.outspend_template.format(wallet_utxo[0], wallet_utxo[1]))
-            if utxo_status["spent"]:
-                self.spend_wallet_utxo(wallet_utxo[0], wallet_utxo[1], utxo_status["txid"], utxo_status["vin"])
-                spent_tx = get_json_from_url(self.tx_template.format(utxo_status["txid"]))
-                block_timestamp = get_block_from_hash(utxo_status["status"]["block_hash"])
-                for idx, vout in enumerate(spent_tx["vout"]):
-                    if vout["scriptpubkey_address"] == "3EiAcrzq1cELXScc98KeCswGWZaPGceT1d":
-                        self.insert_wallet_receieve(utxo_status["txid"], idx, vout["value"], utxo_status["status"]["block_hash"], block_timestamp)
-                    else: #this should be a pegout
-                        self.set_pegout(utxo_status["txid"], idx, vout["value"], vout["scriptpubkey_address"])
-                #TODO: Need to check to see if the spent tx is spent or not, and repeat
-            self.conn.commit()
-        #find donations that are unmixed
-        self.add_donation_utxos("3EiAcrzq1cELXScc98KeCswGWZaPGceT1d")
-        self.add_donation_utxos("3G6neksSBMp51kHJ2if8SeDUrzT8iVETWT")
+        block_height = get_json_from_url("https://blockstream.info/api/blocks/tip/height")
+        self.add_donation_utxos("3EiAcrzq1cELXScc98KeCswGWZaPGceT1d", block_height)
+        self.add_donation_utxos("3G6neksSBMp51kHJ2if8SeDUrzT8iVETWT", block_height)
        
+        #check what wallet transactions are spent
+
+        print("Updating wallet spends")
+        txs = self.conn.execute("SELECT txid, txindex FROM wallet WHERE spent_txid IS NULL")
+        for tx in txs:
+            tx_data = get_json_from_url(self.outspend_template.format(tx[0], tx[1]))
+            if tx_data["spent"] == True and tx_data["status"]["confirmed"] == True and tx_data["status"]["block_height"]+100 <= block_height:
+                self.spend_wallet_utxo(tx[0], tx[1], tx_data["txid"], tx_data["vin"])
+                spent_tx = get_json_from_url(self.tx_template.format(tx_data["txid"]))
+                for idx, vout in enumerate(spent_tx["vout"]):
+                    if not vout["scriptpubkey_address"] == "3EiAcrzq1cELXScc98KeCswGWZaPGceT1d":
+                        self.set_pegout(spent_tx["txid"], idx, vout["value"], vout["scriptpubkey_address"])
+            self.conn.commit()
             
