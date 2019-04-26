@@ -233,4 +233,3 @@ class Logger:
                     if not vout["scriptpubkey_address"] == "3EiAcrzq1cELXScc98KeCswGWZaPGceT1d":
                         self.set_pegout(spent_tx["txid"], idx, vout["value"], vout["scriptpubkey_address"])
             self.conn.commit()
-            
