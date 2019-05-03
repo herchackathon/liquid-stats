@@ -1,30 +1,6 @@
-import argparse
 from datetime import datetime, timedelta
-import json
 from logger import Logger
-from utils import get_rpc, round_time
-import requests
-
-def get_config():
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Liquid staticstics analyzes the Liquid blockchain and logs useful information to track fees collected, assets issued, and outages.')
-    parser.add_argument("configfile", metavar='CONFIG', nargs='?', 
-        type=argparse.FileType('r'), default="config.json",
-         help="the configuration file to read from")
-    args = parser.parse_args()
-    config = json.load(args.configfile)
-    return config
-
-def get_rpc_proxy(config):
-    
-    # Setup RPCs and logge
-    liquid_rpc = get_rpc(config["liquidrpc"]["user"],
-                        config["liquidrpc"]["password"],
-                        config["liquidrpc"]["port"])
-    bitcoin_rpc = get_rpc(config["bitcoinrpc"]["user"],
-                        config["bitcoinrpc"]["password"],
-                        config["bitcoinrpc"]["port"])
-    return liquid_rpc, bitcoin_rpc
+from utils import get_rpc, round_time, get_config, get_rpc_proxy
 
 def main():
     config = get_config()

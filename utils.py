@@ -2,6 +2,8 @@ from datetime import datetime, timedelta
 import decimal
 from bitcoinrpc.authproxy import AuthServiceProxy
 import requests
+import argparse
+import json
 
 def get_block_from_txid(txid):
     tx_template = "https://blockstream.info/api/tx/{0}"
@@ -41,3 +43,24 @@ def round_time(dt=None, round_to=60, round_point=15):
     seconds = (dt.replace(tzinfo=None) - dt.min).seconds
     rounding = (seconds+round_to-round_point) // round_to * round_to
     return dt + timedelta(0,rounding-seconds,-dt.microsecond)
+
+def get_config():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Liquid staticstics analyzes the Liquid blockchain and logs useful information to track fees collected, assets issued, and outages.')
+    parser.add_argument("configfile", metavar='CONFIG', nargs='?', 
+        type=argparse.FileType('r'), default="config.json",
+         help="the configuration file to read from")
+    args = parser.parse_args()
+    config = json.load(args.configfile)
+    return config
+
+def get_rpc_proxy(config):
+    
+    # Setup RPCs and logger
+    liquid_rpc = get_rpc(config["liquidrpc"]["user"],
+                        config["liquidrpc"]["password"],
+                        config["liquidrpc"]["port"])
+    bitcoin_rpc = get_rpc(config["bitcoinrpc"]["user"],
+                        config["bitcoinrpc"]["password"],
+                        config["bitcoinrpc"]["port"])
+    return liquid_rpc, bitcoin_rpc
