@@ -2,18 +2,20 @@ from datetime import datetime, timedelta
 from logger import Logger
 from utils import round_time, get_rpc_proxy
 from config import Configuration
+from parser import Parser
 
 def main():
     config = Configuration()
     liquid_rpc, bitcoin_rpc = get_rpc_proxy(config)
-    logger = Logger(config.database, bitcoin_rpc, liquid_rpc)
-
+    logger = Logger(config.database)
+  
     # Determine range of blocks to log
     next_block_height = logger.next_block_height()
     end_block_height = liquid_rpc.getblockcount()
 
     # Used to determine downtime
     next_expected_block_time = logger.next_expected_block_time()
+    parser = Parser(next_block_height, bitcoin_rpc, liquid_rpc, logger)
 
     # Get last known block again and see if it matches the hash, otherwise set it to 0
     if next_block_height <= end_block_height:
@@ -38,8 +40,8 @@ def main():
             logger.log_downtime(next_expected_block_time, curr_block_time, config.functionary_order)
 
             for tx_full in [liquid_rpc.getrawtransaction(tx, True) for tx in curr_block["tx"]]:
-                logger.log_inputs(tx_full, curr_block_time, curr_block_height)
-                logger.log_outputs(tx_full, curr_block_time, curr_block_height, config["liquid"]["fee_address"], config["liquid"]["bitcoin_asset_id"])
+                parser.log_inputs(tx_full, curr_block_time, curr_block_height)
+                parser.log_outputs(tx_full, curr_block_time, curr_block_height, config["liquid"]["fee_address"], config["liquid"]["bitcoin_asset_id"])
 
             # Expect the next block to be 60 seconds from current one
             next_expected_block_time = curr_block_time + timedelta(seconds=60)

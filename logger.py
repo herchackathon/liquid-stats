@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import sqlite3
-from utils import to_satoshis, to_timestamp, get_block_from_txid, get_json_from_url, get_block_from_hash
+from utils import get_json_from_url
+
 
 class Logger:
 
@@ -29,13 +30,10 @@ class Logger:
         else:
             return self.last_block + 1
 
-    def __init__(self, database, bitcoin_rpc, liquid_rpc):
+    def __init__(self, database):
         #Initialize Database if not created
         self.conn = sqlite3.connect(database)
         self.conn.execute('''CREATE TABLE if not exists schema_version (version int)''')
-
-        self.bitcoin_rpc = bitcoin_rpc
-        self.liquid_rpc = liquid_rpc
 
         schema_version = self.conn.execute("SELECT version FROM schema_version").fetchall()
         if len(schema_version) == 0:
@@ -77,13 +75,6 @@ class Logger:
                     self.conn.execute('''DELETE FROM pegs WHERE datetime >= ? ''', (to_timestamp(self.last_time),))
                     self.conn.execute('''DELETE FROM issuances WHERE datetime >= ? ''', (to_timestamp(self.last_time),))
                     self.block_hash = configuration[0][2]
-
-                    # Reindex if block hash doesn't check out
-                    should_reindex = \
-                        self.last_block is not None and self.block_hash is not None and \
-                        self.liquid_rpc.getblockhash(self.last_block) != self.block_hash
-                if should_reindex:
-                    self.reindex()
             self.conn.commit()
 
     def insert_issuance(self, block_height, block_time, asset_id, amount, txid, txindex, token, tokenamount):
@@ -121,43 +112,6 @@ class Logger:
                 downtime += 1
         if downtime >= 5:
             self.insert_downtime(block_time, downtime)
-
-    def log_inputs(self, tx_full, block_time, block_height):
-        for idx, input in enumerate(tx_full["vin"]):
-            if "is_pegin" in input and input["is_pegin"]:
-                mainchain = self.bitcoin_rpc.decoderawtransaction(input["pegin_witness"][4])
-                address = self.bitcoin_rpc.decodescript(input["pegin_witness"][3])["p2sh"]
-                self.insert_peg(block_height, block_time, to_satoshis(mainchain["vout"][input["vout"]]["value"]), tx_full["txid"],
-                     idx, address, input["txid"], input["vout"])
-                block_hash, block_timestamp = get_block_from_txid(input["txid"])
-                self.insert_wallet_receieve(input["txid"], input["vout"], to_satoshis(mainchain["vout"][input["vout"]]["value"]),
-                     block_hash, block_timestamp)
-            if "issuance" in input:
-                issuance = input["issuance"]
-                if "assetamount" not in issuance:
-                    assetamount = None
-                else:
-                    assetamount = to_satoshis(issuance["assetamount"])
-                if "token" not in issuance:
-                    token = None
-                else:
-                    token = issuance["token"]
-                if "tokenamount" not in issuance:
-                    tokenamount = None
-                else:
-                    tokenamount = to_satoshis(issuance["tokenamount"])
-                self.insert_issuance(block_height, block_time, issuance["asset"], assetamount, tx_full["txid"], idx, token, tokenamount)
-
-    def log_outputs(self, tx_full, block_time, block_height, liquid_fee_address, bitcoin_asset_hex):
-         for idx, output in enumerate(tx_full["vout"]):
-            if "pegout_chain" in output["scriptPubKey"]:
-                self.insert_peg(block_height, block_time, (0-to_satoshis(output["value"])), tx_full["txid"], idx, output["scriptPubKey"]["pegout_addresses"][0], None, None)
-            if "addresses" in output["scriptPubKey"] and output["scriptPubKey"]["addresses"][0] == liquid_fee_address:
-                self.insert_fee(block_height, block_time, to_satoshis(output["value"]))
-            if output["scriptPubKey"]["asm"] == "OP_RETURN" and "asset" in output and output["asset"] != bitcoin_asset_hex and "value" in output and output["value"] > 0:
-                self.insert_issuance(block_height, block_time, output["asset"], 0-to_satoshis(output["value"]), tx_full["txid"], idx, None, None)
-            if output["scriptPubKey"]["asm"] == "OP_RETURN" and "asset" in output and output["asset"] == bitcoin_asset_hex and "value" in output and output["value"] > 0:
-                self.insert_peg(block_height, block_time, (0 - to_satoshis(output["value"])), tx_full["txid"], idx, "", None, None)
 
     def save_progress(self, last_block, last_timestamp, last_hash):
         self.conn.execute("DELETE FROM last_block")
