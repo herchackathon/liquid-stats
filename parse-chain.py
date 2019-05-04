@@ -1,14 +1,12 @@
 from datetime import datetime, timedelta
 from logger import Logger
-from utils import get_rpc, round_time, get_config, get_rpc_proxy
+from utils import round_time, get_rpc_proxy
+from config import Configuration
 
 def main():
-    config = get_config()
+    config = Configuration()
     liquid_rpc, bitcoin_rpc = get_rpc_proxy(config)
-    logger = Logger(config["database"], bitcoin_rpc, liquid_rpc)
-
-    # Parse functionary order from config
-    functionary_order = config["liquid"]["functionary_order"]
+    logger = Logger(config.database, bitcoin_rpc, liquid_rpc)
 
     # Determine range of blocks to log
     next_block_height = logger.next_block_height()
@@ -37,7 +35,7 @@ def main():
                 # Setup RPCs and logger
                 logger.liquid_rpc, logger.bitcoin_rpc = get_rpc_proxy(config)
 
-            logger.log_downtime(next_expected_block_time, curr_block_time, functionary_order)
+            logger.log_downtime(next_expected_block_time, curr_block_time, config.functionary_order)
 
             for tx_full in [liquid_rpc.getrawtransaction(tx, True) for tx in curr_block["tx"]]:
                 logger.log_inputs(tx_full, curr_block_time, curr_block_height)
