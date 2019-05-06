@@ -1,16 +1,75 @@
 from datetime import datetime, timedelta
 import sqlite3
-from utils import get_json_from_url
-
+from utils import get_json_from_url, to_timestamp
+from cursor import Cursor
 
 class Logger:
 
-    SCHEMA_VERSION = 10 #Update this if the schema changes and the chain needs to be reindexed.
+    SCHEMA_VERSION = 10 #Update this if the schema changes.
 
-    def reindex(self):
-        self.last_block = None
-        self.last_time = None
-        self.block_hash = None
+    def __init__(self, database):
+        self.conn = sqlite3.connect(database)
+        if not self.migrate_db():
+            last_logged_data = self.conn.execute("SELECT block, datetime, block_hash FROM last_block").fetchone()
+            last_time = datetime.fromtimestamp(last_logged_data[1])
+            self.cursor = Cursor(last_logged_data[0], last_logged_data[2], last_time)
+            self.remove_new_data(last_logged_data[0],  last_time)
+        else:
+            self.cursor = Cursor()
+       
+    def remove_new_data(self, last_liquid_block_height, last_liquid_block_time):
+        self.conn.execute('''DELETE FROM missing_blocks WHERE datetime >= ? ''', (to_timestamp(last_liquid_block_time),))
+        self.conn.execute('''DELETE FROM fees WHERE datetime >= ? ''', (to_timestamp(last_liquid_block_time),))
+        self.conn.execute('''DELETE FROM outages WHERE end_time >= ? ''', (to_timestamp(last_liquid_block_time),))
+        self.conn.execute('''DELETE FROM pegs WHERE datetime >= ? ''', (to_timestamp(last_liquid_block_time),))
+        self.conn.execute('''DELETE FROM issuances WHERE datetime >= ? ''', (to_timestamp(last_liquid_block_time),))
+        #TOOD handle deleting transaction tracing here
+
+    def create_tables(self):
+        self.conn.execute('''CREATE TABLE if not exists missing_blocks (datetime int, functionary int)''')
+        self.conn.execute('''CREATE TABLE if not exists fees (block int, datetime int, amount int)''')
+        self.conn.execute('''CREATE TABLE if not exists outages (end_time int, length int)''')
+        self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int, txid string, txindex int, bitcoinaddress string, bitcointxid string NULL, bitcoinindex int NULL)''')
+        self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL, txid string, txindex int, token string NULL, tokenamount int NULL)''')
+        self.conn.execute('''CREATE TABLE if not exists last_block (block int, datetime int, block_hash string)''')
+        self.conn.execute('''CREATE TABLE if not exists wallet (txid string, txindex int, amount int, block_hash string, block_timestamp string, spent_txid string NULL, spent_index int NULL)''')
+        self.conn.execute('''CREATE TABLE if not exists txspends (txid string, fee int, block_hash string, datetime int)''')
+    
+    @staticmethod
+    def get_current_schema_version(connection):
+        connection.execute('''CREATE TABLE if not exists schema_version (version int)''')
+        schema_version = connection.execute("SELECT version FROM schema_version").fetchall()
+        if len(schema_version) == 0:
+            return None
+        return schema_version[0][0]
+
+    def migrate_db(self):
+        schema_version = self.get_current_schema_version(self.conn)
+        should_reindex = True
+        if schema_version == None:
+            self.create_tables()
+        else:
+            if schema_version < 3:
+                self.conn.execute('DROP TABLE issuances')
+                self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL, txid string, txindex int, token string NULL, tokenamount int NULL)''')
+            if schema_version < 4:
+                self.conn.execute("DROP TABLE last_block")
+                self.conn.execute('''CREATE TABLE if not exists last_block (block int, datetime int, block_hash string)''')
+            if schema_version < 5:
+                self.conn.execute('''CREATE TABLE if not exists wallet (txid string, txindex int, amount int, block_hash string, block_timestamp string, spent_txid string NULL, spent_index int NULL)''')
+            if schema_version < 9:
+                self.conn.execute('DROP TABLE pegs')
+                self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int, txid string, txindex int, bitcoinaddress string, bitcointxid string NULL, bitcoinindex int NULL)''')
+            if schema_version < 10:
+                self.conn.execute('''CREATE TABLE if not exists txspends (txid string, fee int, block_hash string, datetime int)''')
+            elif schema_version == self.SCHEMA_VERSION:
+                should_reindex = False
+                
+            self.conn.commit()
+
+        return should_reindex
+
+    def reset(self):
         self.conn.execute('''DELETE FROM missing_blocks''')
         self.conn.execute('''DELETE FROM fees''')
         self.conn.execute('''DELETE FROM outages''')
@@ -18,70 +77,12 @@ class Logger:
         self.conn.execute('''DELETE FROM issuances''')
         self.conn.execute('''DELETE FROM wallet''')
 
-    def next_expected_block_time(self):
-        if self.last_time is None:
-            return datetime.fromtimestamp(0)
-        else:
-            return self.last_time + timedelta(seconds=60)
-
-    def next_block_height(self):
-        if self.last_block is None:
-            return 1
-        else:
-            return self.last_block + 1
-
-    def __init__(self, database):
-        #Initialize Database if not created
-        self.conn = sqlite3.connect(database)
-        self.conn.execute('''CREATE TABLE if not exists schema_version (version int)''')
-
-        schema_version = self.conn.execute("SELECT version FROM schema_version").fetchall()
-        if len(schema_version) == 0:
-            self.conn.execute('''CREATE TABLE if not exists missing_blocks (datetime int, functionary int)''')
-            self.conn.execute('''CREATE TABLE if not exists fees (block int, datetime int, amount int)''')
-            self.conn.execute('''CREATE TABLE if not exists outages (end_time int, length int)''')
-            self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int, txid string, txindex int, bitcoinaddress string, bitcointxid string NULL, bitcoinindex int NULL)''')
-            self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL, txid string, txindex int, token string NULL, tokenamount int NULL)''')
-            self.conn.execute('''CREATE TABLE if not exists last_block (block int, datetime int, block_hash string)''')
-            self.conn.execute('''CREATE TABLE if not exists wallet (txid string, txindex int, amount int, block_hash string, block_timestamp string, spent_txid string NULL, spent_index int NULL)''')
-            self.conn.execute('''CREATE TABLE if not exists txspends (txid string, fee int, block_hash string, datetime int)''')
-            self.reindex()
-        else:
-            if schema_version[0][0] < 3:
-                self.conn.execute('DROP TABLE issuances')
-                self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL, txid string, txindex int, token string NULL, tokenamount int NULL)''')
-            if schema_version[0][0] < 4:
-                self.conn.execute("DROP TABLE last_block")
-                self.conn.execute('''CREATE TABLE if not exists last_block (block int, datetime int, block_hash string)''')
-            if schema_version[0][0] < 5:
-                self.conn.execute('''CREATE TABLE if not exists wallet (txid string, txindex int, amount int, block_hash string, block_timestamp string, spent_txid string NULL, spent_index int NULL)''')
-            if schema_version[0][0] < 9:
-                self.conn.execute('DROP TABLE pegs')
-                self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int, txid string, txindex int, bitcoinaddress string, bitcointxid string NULL, bitcoinindex int NULL)''')
-            if schema_version[0][0] < 10:
-                self.conn.execute('''CREATE TABLE if not exists txspends (txid string, fee int, block_hash string, datetime int)''')
-                self.reindex()
-            else:
-                configuration = self.conn.execute("SELECT block, datetime, block_hash FROM last_block").fetchall()
-                should_reindex = False
-                if len(configuration) == 0:
-                    should_reindex = True
-                else:
-                    self.last_time = datetime.fromtimestamp(configuration[0][1])
-                    self.last_block = configuration[0][0]
-                    self.conn.execute('''DELETE FROM missing_blocks WHERE datetime >= ? ''', (to_timestamp(self.last_time),))
-                    self.conn.execute('''DELETE FROM fees WHERE datetime >= ? ''', (to_timestamp(self.last_time),))
-                    self.conn.execute('''DELETE FROM outages WHERE end_time >= ? ''', (to_timestamp(self.last_time),))
-                    self.conn.execute('''DELETE FROM pegs WHERE datetime >= ? ''', (to_timestamp(self.last_time),))
-                    self.conn.execute('''DELETE FROM issuances WHERE datetime >= ? ''', (to_timestamp(self.last_time),))
-                    self.block_hash = configuration[0][2]
-            self.conn.commit()
-
     def insert_issuance(self, block_height, block_time, asset_id, amount, txid, txindex, token, tokenamount):
         self.conn.execute("INSERT INTO issuances VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (block_height, to_timestamp(block_time), asset_id, amount, txid, txindex, token, tokenamount))
 
-    def insert_peg(self, block_height, block_time, amount, txid, txindex, bitcoinaddress, bitcointxid=None, bitcointxindex=None):
-        self.conn.execute("INSERT INTO pegs VALUES (?, ?, ?, ? , ?, ?, ?, ?)", (block_height, to_timestamp(block_time), amount, txid, txindex, bitcoinaddress, bitcointxid, bitcointxindex))
+    def insert_peg(self, input, amount, bitcoin_rpc):
+        self.conn.execute("INSERT INTO pegs VALUES (?, ?, ?, ? , ?, ?, ?, ?)", (input.transaction.block.block_height, input.transaction.block.block_time, amount,
+            input.transaction.txid, input.vin, input.get_pegin_address(bitcoin_rpc), input.transaction.txid, input.vout))
 
     def insert_wallet_receieve(self, txid, txindex, amount, block_height, block_timestamp):
         if block_height == None:
@@ -113,9 +114,9 @@ class Logger:
         if downtime >= 5:
             self.insert_downtime(block_time, downtime)
 
-    def save_progress(self, last_block, last_timestamp, last_hash):
+    def save_progress(self, cursor):
         self.conn.execute("DELETE FROM last_block")
-        self.conn.execute("INSERT INTO last_block VALUES (?, ?, ?) ", (last_block, to_timestamp(last_timestamp), last_hash))
+        self.conn.execute("INSERT INTO last_block VALUES (?, ?, ?) ", (cursor.last_block_height, to_timestamp(cursor.last_block_time), cursor.last_block_hash))
 
         self.conn.execute("DELETE FROM schema_version")
         self.conn.execute("INSERT INTO schema_version VALUES (?) ", (Logger.SCHEMA_VERSION,))
@@ -136,26 +137,6 @@ class Logger:
     outspend_template = "https://blockstream.info/api/tx/{0}/outspend/{1}"
     tx_template = "https://blockstream.info/api/tx/{0}"
 
-    def add_donation_utxos(self, address, block_height):
-        print("Adding TXOs from {0}".format(address))
-        txs = []
-        last_txid = None
-        #TODO stop processing when we find a transaction we know about already
-        while(last_txid == None or len(txs) > 0):
-            if last_txid == None:
-                txs = get_json_from_url("https://blockstream.info/api/address/{0}/txs".format(address))
-            else:
-                txs = get_json_from_url("https://blockstream.info/api/address/{0}/txs/chain/{1}".format(address, last_txid))
-            for tx in txs:
-                last_txid = tx["txid"]
-                if tx["status"]["confirmed"] == True and tx["status"]["block_height"]+100 <= block_height:
-                    for idx, output in enumerate(tx["vout"]):
-                        if output["scriptpubkey_address"] == address:
-                            count = self.conn.execute("SELECT COUNT(*) FROM wallet WHERE txid=? AND txindex=?", (tx["txid"], idx)).fetchone()[0]
-                            if count == 0:
-                                self.insert_wallet_receieve(tx["txid"], idx, output["value"], tx["status"]["block_hash"], tx["status"]["block_time"])
-                                self.conn.commit()
-
     def get_unconfirmed(self):
         result = self.conn.execute("SELECT txid, txindex FROM wallet WHERE block_hash IS NULL")
         return result
@@ -167,23 +148,3 @@ class Logger:
             return 
         tx = self.conn.execute("SELECT txid, txindex FROM pegs WHERE bitcoinaddress=? AND amount=? AND bitcointxid IS NULL ORDER BY datetime DESC LIMIT 1", (address, 0-value)).fetchone()
         self.conn.execute("UPDATE pegs SET bitcointxid=?, bitcoinindex=? WHERE txid=? AND txindex=?", (txid, idx, tx[0], tx[1]))
-
-    def update_wallet(self):
-
-        block_height = get_json_from_url("https://blockstream.info/api/blocks/tip/height")
-        self.add_donation_utxos("3EiAcrzq1cELXScc98KeCswGWZaPGceT1d", block_height)
-        self.add_donation_utxos("3G6neksSBMp51kHJ2if8SeDUrzT8iVETWT", block_height)
-       
-        #check what wallet transactions are spent
-
-        print("Updating wallet spends")
-        txs = self.conn.execute("SELECT txid, txindex FROM wallet WHERE spent_txid IS NULL")
-        for tx in txs:
-            tx_data = get_json_from_url(self.outspend_template.format(tx[0], tx[1]))
-            if tx_data["spent"] == True and tx_data["status"]["confirmed"] == True and tx_data["status"]["block_height"]+100 <= block_height:
-                self.spend_wallet_utxo(tx[0], tx[1], tx_data["txid"], tx_data["vin"])
-                spent_tx = get_json_from_url(self.tx_template.format(tx_data["txid"]))
-                for idx, vout in enumerate(spent_tx["vout"]):
-                    if not vout["scriptpubkey_address"] == "3EiAcrzq1cELXScc98KeCswGWZaPGceT1d":
-                        self.set_pegout(spent_tx["txid"], idx, vout["value"], vout["scriptpubkey_address"])
-            self.conn.commit()

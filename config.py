@@ -15,4 +15,5 @@ class Configuration:
         self.bitcoinrpc = config["bitcoinrpc"]
         self.database = config["database"]
         self.functionary_order = config["liquid"]["functionary_order"]
-        
+        self.fee_address = config["liquid"]["fee_address"]
+        self.bitcoin_asset_hex = config["liquid"]["bitcoin_asset_id"]
