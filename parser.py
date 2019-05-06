@@ -51,11 +51,11 @@ class Parser:
         logger.log_downtime(next_expected_block_time, liquid_block.block_time, self.config.functionary_order)
 
         for tx in liquid_block.get_transactions():
-            self.parse_inputs(logger, tx, liquid_block.block_time, height, liquid_rpc, bitcoin_rpc)
-            self.parse_outputs(logger, tx, liquid_block.block_time, height)
+            self.parse_inputs(logger, tx, bitcoin_rpc)
+            self.parse_outputs(logger, tx)
         cursor.advance(liquid_block)
 
-    def parse_inputs(self, logger, tx, block_time, block_height, liquid_rpc, bitcoin_rpc):
+    def parse_inputs(self, logger, tx, bitcoin_rpc):
 
         for input in tx.get_inputs():
             if input.is_pegin():
@@ -66,7 +66,8 @@ class Parser:
 
     def parse_peg_in(self, logger, input, bitcoin_rpc):
         mainchain_tx = input.get_mainchain_transaction(bitcoin_rpc)
-        logger.insert_peg(input, mainchain_tx.get_amount_from_output(input.vout), bitcoin_rpc)
+        logger.insert_peg(input.transaction.block.block_height, input.transaction.block.block_time, mainchain_tx.get_amount_from_output(input.vout),
+            input.transaction.txid, input.vin, input.get_pegin_address(bitcoin_rpc), input.transaction.txid, input.vout)
                 
         block_hash, block_timestamp = get_block_from_txid(mainchain_tx.txid)
 
@@ -79,16 +80,16 @@ class Parser:
         tokenamount = input.get_token_amount()
         logger.insert_issuance(input.transaction.block.block_height, input.transaction.block.block_time, input.asset, assetamount, input.txid, input.vin, token, tokenamount)
 
-    def parse_outputs(self, logger, tx_full, block_time, block_height):
-         for idx, output in enumerate(tx_full.outputs):
-            if "pegout_chain" in output["scriptPubKey"]:
-                logger.insert_peg(block_height, block_time, (0-to_satoshis(output["value"])), tx_full.txid, idx, output["scriptPubKey"]["pegout_addresses"][0], None, None)
-            if "addresses" in output["scriptPubKey"] and output["scriptPubKey"]["addresses"][0] == self.config.fee_address:
-                logger.insert_fee(block_height, block_time, to_satoshis(output["value"]))
-            if output["scriptPubKey"]["asm"] == "OP_RETURN" and "asset" in output and output["asset"] != self.config.bitcoin_asset_hex and "value" in output and output["value"] > 0:
-                logger.insert_issuance(block_height, block_time, output["asset"], 0-to_satoshis(output["value"]), tx_full.txid, idx, None, None)
-            if output["scriptPubKey"]["asm"] == "OP_RETURN" and "asset" in output and output["asset"] == self.config.bitcoin_asset_hex and "value" in output and output["value"] > 0:
-                logger.insert_peg(block_height, block_time, (0 - to_satoshis(output["value"])), tx_full.txid, idx, "", None, None)
+    def parse_outputs(self, logger, tx):
+         for output in tx.get_outputs():
+            if output.is_pegout():
+                logger.insert_peg(output.transaction.block.block_height, output.transaction.block.block_time, (0-to_satoshis(output.value)), output.transaction.txid, output.vout, output.data["scriptPubKey"]["pegout_addresses"][0], None, None)
+            if output.is_fee(self.config.fee_address):
+                logger.insert_fee(output.transaction.block.block_height, output.transaction.block.block_time, to_satoshis(output.value))
+            if output.is_asset_burn(self.config.bitcoin_asset_hex):
+                logger.insert_issuance(output.transaction.block.block_height, output.transaction.block.block_time, output["asset"], 0-to_satoshis(output["value"]), output.transaction.txid, output.vout, None, None)
+            if output.is_lbtc_burn(self.config.bitcoin_asset_hex):
+                logger.insert_peg(output.transaction.block.block_height, output.transaction.block.block_time, (0 - to_satoshis(output["value"])), output.transaction.txid, output.vout, "", None, None)
  
     def save_progress(self, cursor, logger):
         print("Block {0}".format(cursor.last_block_height))

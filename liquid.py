@@ -64,7 +64,23 @@ class LiquidOutput:
         self.data = output
         self.transaction = transaction
         self.vout = index
+        self.value = output["value"]
 
+    def is_pegout(self):
+        return "pegout_chain" in self.data["scriptPubKey"]
+
+    def is_fee(self, fee_address):
+        return "addresses" in self.data["scriptPubKey"] and self.data["scriptPubKey"]["addresses"][0] == fee_address
+
+    def is_burn(self):
+        return self.data["scriptPubKey"]["asm"] == "OP_RETURN" and "asset" in self.data and "value" in self.data and self.data["value"] > 0
+
+    def is_asset_burn(self, bitcoin_asset_hex):
+        return self.is_burn() and self.data["asset"] != bitcoin_asset_hex
+
+    def is_lbtc_burn(self, bitcoin_asset_hex):
+        return self.is_burn() and self.data["asset"] == bitcoin_asset_hex
+    
 class BitcoinTransaction:
     def __init__(self, data):
         self.data = data

@@ -80,9 +80,9 @@ class Logger:
     def insert_issuance(self, block_height, block_time, asset_id, amount, txid, txindex, token, tokenamount):
         self.conn.execute("INSERT INTO issuances VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (block_height, to_timestamp(block_time), asset_id, amount, txid, txindex, token, tokenamount))
 
-    def insert_peg(self, input, amount, bitcoin_rpc):
-        self.conn.execute("INSERT INTO pegs VALUES (?, ?, ?, ? , ?, ?, ?, ?)", (input.transaction.block.block_height, input.transaction.block.block_time, amount,
-            input.transaction.txid, input.vin, input.get_pegin_address(bitcoin_rpc), input.transaction.txid, input.vout))
+    def insert_peg(self, block_height, block_time, amount, txid, txindex, bitcoinaddress, bitcointxid=None, bitcointxindex=None):
+        
+        self.conn.execute("INSERT INTO pegs VALUES (?, ?, ?, ? , ?, ?, ?, ?)", (block_height, block_time, amount, txid, txindex, bitcoinaddress, bitcointxid, bitcointxindex))
 
     def insert_wallet_receieve(self, txid, txindex, amount, block_height, block_timestamp):
         if block_height == None:

@@ -19,7 +19,6 @@ class Cursor:
         else:
             return self.last_block_height + 1
 
-
     def reset(self):
         self.last_block_hash = None
         self.last_block_parsed = None
