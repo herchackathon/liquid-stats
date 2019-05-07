@@ -16,6 +16,9 @@ class Logger:
             self.remove_new_data(last_logged_data[0],  last_time)
         else:
             self.cursor = Cursor()
+    
+    def __del__(self):
+        self.conn.close()
        
     def remove_new_data(self, last_liquid_block_height, last_liquid_block_time):
         self.conn.execute('''DELETE FROM missing_blocks WHERE datetime >= ? ''', (to_timestamp(last_liquid_block_time),))

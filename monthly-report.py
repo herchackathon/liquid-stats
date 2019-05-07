@@ -13,6 +13,7 @@ def get_uptime(start_time, end_time):
         ORDER BY period_start_time)""", 
         (start_time.timestamp(), end_time.timestamp(), start_time.timestamp(), end_time.timestamp(), start_time.timestamp(), end_time.timestamp()))
     downtime_sum = result.fetchone()
+    connection.close()
     if downtime_sum[0] == None:
         return 1
     return (1 - (downtime_sum[0] / minutes))
@@ -22,6 +23,7 @@ def get_block_efficiency(start_time, end_time):
     minutes = (end_time - start_time).total_seconds() / 60
     result = connection.execute("""SELECT COUNT(*) FROM missing_blocks WHERE datetime >=? AND datetime<?""", (start_time.timestamp(), end_time.timestamp()))
     missing_blocks = result.fetchone()
+    connection.close()
     if missing_blocks[0] == None:
         return 1
     return (1 - missing_blocks[0] / minutes)
@@ -30,6 +32,7 @@ def get_wallet_balance(end_time):
     connection = sqlite3.connect(db_location)
     result = connection.execute("SELECT SUM(amount) FROM pegs WHERE datetime < ?", (end_time.timestamp(),))
     wallet = result.fetchone()
+    connection.close()
     if wallet[0] == None:
         return 0
     return wallet[0]/1e8
