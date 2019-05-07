@@ -84,7 +84,7 @@ class LiquidOutput:
         return "addresses" in self.data["scriptPubKey"] and self.data["scriptPubKey"]["addresses"][0] == fee_address
 
     def is_burn(self):
-        return self.data["scriptPubKey"]["type"] == "nulldata" and "asset" in self.data and "value" in self.data \
+        return not self.is_pegout() and self.data["scriptPubKey"]["type"] == "nulldata" and "asset" in self.data and "value" in self.data \
             and self.value > 0
 
     def is_asset_burn(self, bitcoin_asset_hex):
