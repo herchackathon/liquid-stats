@@ -31,7 +31,7 @@ def to_satoshis(btc_amt):
     return int(btc_amt * decimal.Decimal(1e8))
 
 def to_timestamp(time_as_datetime):
-    return int((time_as_datetime - datetime.fromtimestamp(0)).total_seconds())
+    return int((time_as_datetime - datetime.utcfromtimestamp(0)).total_seconds())
 
 def round_time(dt=None, round_to=60, round_point=15):
     """Round a datetime object to any time lapse in seconds
@@ -54,3 +54,7 @@ def get_rpc_proxy(config):
                         config.bitcoinrpc["password"],
                         config.bitcoinrpc["port"])
     return liquid_rpc, bitcoin_rpc
+
+def get_transaction_from_blockstream_info(txid):
+    tx_template = "https://blockstream.info/api/tx/{0}"
+    return get_json_from_url(tx_template.format(txid))

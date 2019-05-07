@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta
 import sqlite3
-from utils import get_json_from_url, to_timestamp
+from utils import get_json_from_url, to_timestamp, get_transaction_from_blockstream_info
 from cursor import Cursor
 
 class Logger:
 
-    SCHEMA_VERSION = 10 #Update this if the schema changes.
+    SCHEMA_VERSION = 11 #Update this if the schema changes.
 
     def __init__(self, database):
         self.conn = sqlite3.connect(database)
@@ -19,10 +19,10 @@ class Logger:
        
     def remove_new_data(self, last_liquid_block_height, last_liquid_block_time):
         self.conn.execute('''DELETE FROM missing_blocks WHERE datetime >= ? ''', (to_timestamp(last_liquid_block_time),))
-        self.conn.execute('''DELETE FROM fees WHERE datetime >= ? ''', (to_timestamp(last_liquid_block_time),))
+        self.conn.execute('''DELETE FROM fees WHERE block >= ? ''', (last_liquid_block_height,))
         self.conn.execute('''DELETE FROM outages WHERE end_time >= ? ''', (to_timestamp(last_liquid_block_time),))
-        self.conn.execute('''DELETE FROM pegs WHERE datetime >= ? ''', (to_timestamp(last_liquid_block_time),))
-        self.conn.execute('''DELETE FROM issuances WHERE datetime >= ? ''', (to_timestamp(last_liquid_block_time),))
+        self.conn.execute('''DELETE FROM pegs WHERE block >= ? ''', (last_liquid_block_height,))
+        self.conn.execute('''DELETE FROM issuances WHERE block >= ? ''', (last_liquid_block_height,))
         #TOOD handle deleting transaction tracing here
 
     def create_tables(self):
@@ -81,10 +81,9 @@ class Logger:
         self.conn.execute("INSERT INTO issuances VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (block_height, to_timestamp(block_time), asset_id, amount, txid, txindex, token, tokenamount))
 
     def insert_peg(self, block_height, block_time, amount, txid, txindex, bitcoinaddress, bitcointxid=None, bitcointxindex=None):
-        
-        self.conn.execute("INSERT INTO pegs VALUES (?, ?, ?, ? , ?, ?, ?, ?)", (block_height, block_time, amount, txid, txindex, bitcoinaddress, bitcointxid, bitcointxindex))
+        self.conn.execute("INSERT INTO pegs VALUES (?, ?, ?, ? , ?, ?, ?, ?)", (block_height, to_timestamp(block_time), amount, txid, txindex, bitcoinaddress, bitcointxid, bitcointxindex))
 
-    def insert_wallet_receieve(self, txid, txindex, amount, block_height, block_timestamp):
+    def insert_wallet_receive(self, txid, txindex, amount, block_height, block_timestamp):
         if block_height == None:
             return
         cursor = self.conn.execute("SELECT COUNT(*) FROM wallet WHERE txid=? AND txindex=?", (txid ,txindex))
@@ -103,17 +102,6 @@ class Logger:
     def insert_processed_peg_out(self, address, amount, txid, txindex):
         return NotImplementedError()
 
-    def log_downtime(self, expected_block_time, block_time, functionary_order):
-        downtime = 0
-        if expected_block_time != datetime.fromtimestamp(0):
-            while block_time > expected_block_time:
-                functionary = functionary_order[expected_block_time.minute % 15]
-                self.insert_missed_block(expected_block_time, functionary)
-                expected_block_time += timedelta(seconds=60)
-                downtime += 1
-        if downtime >= 5:
-            self.insert_downtime(block_time, downtime)
-
     def save_progress(self, cursor):
         self.conn.execute("DELETE FROM last_block")
         self.conn.execute("INSERT INTO last_block VALUES (?, ?, ?) ", (cursor.last_block_height, to_timestamp(cursor.last_block_time), cursor.last_block_hash))
@@ -127,15 +115,13 @@ class Logger:
         result = self.conn.execute("SELECT txid, txindex FROM wallet WHERE spent_txid IS NULL")
         return result
 
+
     def spend_wallet_utxo(self, txid, txindex, spenttxid, spentindex):
         self.conn.execute("UPDATE wallet SET spent_txid=?, spent_index=? WHERE txid=? AND txindex=?", (spenttxid, spentindex, txid, txindex))
-        logged_fee = self.conn.execute("SELECT COUNT(*) FROM txspends WHERE txid=?", (spenttxid,)).fetchone()[0]
-        if logged_fee == 0:
-            tx_details = get_json_from_url("https://blockstream.info/api/tx/{0}".format(spenttxid))
+        matching_transactions = self.conn.execute("SELECT COUNT(*) FROM txspends WHERE txid=?", (spenttxid,)).fetchone()[0]
+        if matching_transactions == 0:
+            tx_details = get_transaction_from_blockstream_info(spenttxid)
             self.conn.execute("INSERT INTO txspends (txid, fee, block_hash, datetime) VALUES (?, ?, ?, ?)", (spenttxid, tx_details["fee"], tx_details["status"]["block_hash"], tx_details["status"]["block_time"]))
-
-    outspend_template = "https://blockstream.info/api/tx/{0}/outspend/{1}"
-    tx_template = "https://blockstream.info/api/tx/{0}"
 
     def get_unconfirmed(self):
         result = self.conn.execute("SELECT txid, txindex FROM wallet WHERE block_hash IS NULL")
@@ -143,8 +129,14 @@ class Logger:
 
     def set_pegout(self, txid, idx, value, address):
         #is this utxo already accounted for?
-        processed = self.conn.execute("SELECT COUNT(*) FROM pegs WHERE amount < 0 AND bitcointxid=? AND bitcoinindex=?", (txid, idx)).fetchone()[0]
-        if processed:
+        processed = self.conn.execute("SELECT COUNT(*) FROM pegs WHERE amount < 0 AND bitcointxid=? AND bitcoinindex=? AND bitcoinaddress=?", (txid, idx, address)).fetchone()[0]
+        if processed > 0:
             return 
         tx = self.conn.execute("SELECT txid, txindex FROM pegs WHERE bitcoinaddress=? AND amount=? AND bitcointxid IS NULL ORDER BY datetime DESC LIMIT 1", (address, 0-value)).fetchone()
         self.conn.execute("UPDATE pegs SET bitcointxid=?, bitcoinindex=? WHERE txid=? AND txindex=?", (txid, idx, tx[0], tx[1]))
+
+    def get_unspent_transactions(self):
+        values = self.conn.execute("SELECT txid, txindex FROM wallet WHERE spent_txid IS NULL")
+        for value in values:
+            yield {"txid": value[0], "vout": value[1]}
+            

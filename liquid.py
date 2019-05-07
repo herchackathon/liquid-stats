@@ -1,6 +1,15 @@
 from utils import round_time, to_satoshis
 from datetime import datetime
 
+class LiquidNetworkParameters():
+    def __init__(self, functionary_order, first_block_time):
+        self.functionary_order = functionary_order
+        self.first_block_time = first_block_time
+
+    def get_expected_functionary(self, block_time):
+        functionary_index = int((block_time - self.first_block_time).total_seconds()/60) % len(self.functionary_order)
+        return self.functionary_order[functionary_index]
+
 class LiquidBlock:
     def __init__(self, liquid_rpc, height):
         self.block_hash = liquid_rpc.getblockhash(height)
@@ -57,14 +66,16 @@ class LiquidInput:
         return None if "token" not in self.data["issuance"] else self.data["issuance"]["token"]
 
     def get_token_amount(self):
-        return None if "tokenamount" not in self.data["issuance"] else self.data["issuance"]["tokenamount"]
+        return None if "tokenamount" not in self.data["issuance"] else to_satoshis(self.data["issuance"]["tokenamount"])
 
 class LiquidOutput:
     def __init__(self, output, transaction, index):
         self.data = output
         self.transaction = transaction
         self.vout = index
-        self.value = output["value"]
+        self.value = None if "value" not in output else to_satoshis(output["value"])
+        self.pegout_address = None if "pegout_addresses" not in output["scriptPubKey"] else output["scriptPubKey"]["pegout_addresses"][0]
+        self.asset = None if "asset" not in output else output["asset"]
 
     def is_pegout(self):
         return "pegout_chain" in self.data["scriptPubKey"]
@@ -73,19 +84,39 @@ class LiquidOutput:
         return "addresses" in self.data["scriptPubKey"] and self.data["scriptPubKey"]["addresses"][0] == fee_address
 
     def is_burn(self):
-        return self.data["scriptPubKey"]["asm"] == "OP_RETURN" and "asset" in self.data and "value" in self.data and self.data["value"] > 0
+        return self.data["scriptPubKey"]["type"] == "nulldata" and "asset" in self.data and "value" in self.data \
+            and self.value > 0
 
     def is_asset_burn(self, bitcoin_asset_hex):
-        return self.is_burn() and self.data["asset"] != bitcoin_asset_hex
+        return self.is_burn() and self.asset != bitcoin_asset_hex
 
     def is_lbtc_burn(self, bitcoin_asset_hex):
-        return self.is_burn() and self.data["asset"] == bitcoin_asset_hex
-    
+        return self.is_burn() and self.asset == bitcoin_asset_hex
+
 class BitcoinTransaction:
     def __init__(self, data):
         self.data = data
         self.txid = data["txid"]
-    
+        self.block_hash = None if "status" not in data else data["status"]["block_hash"]
+        self.block_time = None if "status" not in data else data["status"]["block_time"]
+         
     def get_amount_from_output(self, vout):
-        return to_satoshis(self.data["vout"][vout]["value"])
-    
+        output = BitcoinOutput(self.data["vout"][vout], vout, self).value
+        return to_satoshis(output)
+
+    def get_outputs(self):
+        for idx, output in enumerate(self.data["vout"]):
+            yield BitcoinOutput(output, idx, self)
+
+class BitcoinOutput():
+    def __init__(self, data, vout, transaction):
+        self.data = data
+        self.transaction = transaction
+        self.value = data["value"]
+        if "scriptpubkey_address" in data:
+            self.address = data["scriptpubkey_address"]
+        elif "scriptPubKey" in data:
+            self.address = data["scriptPubKey"]["addresses"][0]
+        else:
+            self.address = None
+        self.vout = vout

@@ -1,5 +1,6 @@
 import json
 import argparse
+from datetime import datetime
 
 class Configuration:
     def __init__(self):
@@ -17,3 +18,4 @@ class Configuration:
         self.functionary_order = config["liquid"]["functionary_order"]
         self.fee_address = config["liquid"]["fee_address"]
         self.bitcoin_asset_hex = config["liquid"]["bitcoin_asset_id"]
+        self.first_block_time = datetime.utcfromtimestamp(1538011800)
