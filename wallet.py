@@ -28,6 +28,7 @@ class WalletManager():
 
                 for output in spent_tx.get_outputs():
                     if not output.address == self.change_address:
+                        print("Processing pegout to {0}".format(output.address))
                         logger.set_pegout(outspend_tx["txid"], output.vout, output.value, output.address)
                         
             logger.conn.commit()
