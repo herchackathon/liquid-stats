@@ -136,8 +136,8 @@ class Logger:
         if processed > 0:
             return 
         tx = self.conn.execute("SELECT txid, txindex FROM pegs WHERE bitcoinaddress=? AND amount=? AND bitcointxid IS NULL ORDER BY datetime DESC LIMIT 1", (address, 0-value)).fetchone()
-        print("Processing pegout to {0}, amount: {1} from Liquidtxid {2}:{3}".format(address, value, tx[0], tx[1]))
-        self.conn.execute("UPDATE pegs SET bitcointxid=?, bitcoinindex=? WHERE txid=? AND txindex=?", (txid, idx, tx[0], tx[1]))
+        if tx is not None:
+            self.conn.execute("UPDATE pegs SET bitcointxid=?, bitcoinindex=? WHERE txid=? AND txindex=?", (txid, idx, tx[0], tx[1]))
 
     def get_unspent_transactions(self):
         values = self.conn.execute("SELECT txid, txindex FROM wallet WHERE spent_txid IS NULL")
