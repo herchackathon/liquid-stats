@@ -99,6 +99,7 @@ class BitcoinTransaction:
         self.txid = data["txid"]
         self.block_hash = None if "status" not in data else data["status"]["block_hash"]
         self.block_time = None if "status" not in data else data["status"]["block_time"]
+        self.block_height = None if "status" not in data else data["status"]["block_height"]
          
     def get_amount_from_output(self, vout):
         output = BitcoinOutput(self.data["vout"][vout], vout, self).value

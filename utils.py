@@ -8,14 +8,14 @@ import json
 def get_block_from_txid(txid):
     tx_template = "https://blockstream.info/api/tx/{0}"
     tx_info = get_json_from_url(tx_template.format(txid))
-    return tx_info["status"]["block_hash"], get_block_from_hash(tx_info["status"]["block_hash"])
+    return tx_info["status"]["block_hash"], get_block_from_hash(tx_info["status"]["block_hash"]), tx_info["status"]["block_height"]
 
 def get_block_from_hash(block_hash):
     if block_hash == None:
         return None
     block_template = "https://blockstream.info/api/block/{0}"
     block_info = get_json_from_url(block_template.format(block_hash))
-    return block_info["timestamp"]
+    return block_info["timestamp"], block_info["height"]
 
 def get_json_from_url(url):
     response = requests.get(url)

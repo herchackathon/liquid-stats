@@ -64,7 +64,7 @@ class WalletManager():
                 if self.has_sufficient_spends(tx.data, block_height):
                     for output in tx.get_outputs():
                         if output.address == address:
-                            logger.insert_wallet_receive(output.transaction.txid, output.vout, output.value, output.transaction.block_hash, output.transaction.block_time)      
+                            logger.insert_wallet_receive(output.transaction.txid, output.vout, output.value, output.transaction.block_hash, output.transaction.block_time, output.transaction.block_height)      
 
     def has_sufficient_spends(self, tx_data, block_height):
         return tx_data["status"]["confirmed"] == True and tx_data["status"]["block_height"]+ self.minimum_confirms <= block_height

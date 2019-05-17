@@ -78,10 +78,10 @@ class Parser:
         logger.insert_peg(input.transaction.block.block_height, input.transaction.block.block_time, mainchain_tx.get_amount_from_output(input.vout),
             input.transaction.txid, input.vin, input.get_pegin_address(bitcoin_rpc), input.transaction.txid, input.vout)
                 
-        block_hash, block_timestamp = get_block_from_txid(mainchain_tx.txid)
+        block_hash, block_timestamp, block_height = get_block_from_txid(mainchain_tx.txid)
 
         logger.insert_wallet_receive(input.txid, input.vout, mainchain_tx.get_amount_from_output(input.vout),
-                block_hash, block_timestamp)
+                block_hash, block_timestamp, block_height)
 
     def parse_issuance(self, logger, input):
         assetamount = input.get_asset_amount()

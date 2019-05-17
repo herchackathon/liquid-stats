@@ -5,7 +5,7 @@ from cursor import Cursor
 
 class Logger:
 
-    SCHEMA_VERSION = 11 #Update this if the schema changes.
+    SCHEMA_VERSION = 12 #Update this if the schema changes.
 
     def __init__(self, database):
         self.conn = sqlite3.connect(database)
@@ -35,7 +35,7 @@ class Logger:
         self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int, txid string, txindex int, bitcoinaddress string, bitcointxid string NULL, bitcoinindex int NULL)''')
         self.conn.execute('''CREATE TABLE if not exists issuances (block int, datetime int, asset text, amount int NULL, txid string, txindex int, token string NULL, tokenamount int NULL)''')
         self.conn.execute('''CREATE TABLE if not exists last_block (block int, datetime int, block_hash string)''')
-        self.conn.execute('''CREATE TABLE if not exists wallet (txid string, txindex int, amount int, block_hash string, block_timestamp string, spent_txid string NULL, spent_index int NULL)''')
+        self.conn.execute('''CREATE TABLE if not exists wallet (txid string, txindex int, amount int, block_hash string, block_timestamp string, block_height int, spent_txid string NULL, spent_index int NULL)''')
         self.conn.execute('''CREATE TABLE if not exists txspends (txid string, fee int, block_hash string, datetime int)''')
     
     @staticmethod
@@ -49,6 +49,7 @@ class Logger:
     def migrate_db(self):
         schema_version = self.get_current_schema_version(self.conn)
         should_reindex = True
+        should_update_wallet_blocks  = False
         if schema_version == None:
             self.create_tables()
         else:
@@ -65,8 +66,12 @@ class Logger:
                 self.conn.execute('''CREATE TABLE if not exists pegs (block int, datetime int, amount int, txid string, txindex int, bitcoinaddress string, bitcointxid string NULL, bitcoinindex int NULL)''')
             if schema_version < 10:
                 self.conn.execute('''CREATE TABLE if not exists txspends (txid string, fee int, block_hash string, datetime int)''')
-            elif schema_version == self.SCHEMA_VERSION:
+            if schema_version == 11:
+                self.conn.execute('''ALTER TABLE wallet ADD COLUMN block_height int NULL''')
+                self.update_block_heights()
+            if schema_version >= 11:
                 should_reindex = False
+            
                 
             self.conn.commit()
 
@@ -80,18 +85,31 @@ class Logger:
         self.conn.execute('''DELETE FROM issuances''')
         self.conn.execute('''DELETE FROM wallet''')
 
+    @staticmethod
+    def get_block_height(hash):
+        block_info = get_json_from_url("https://blockstream.info/api/block/{0}".format(hash))
+        return block_info["height"]
+
+    def update_block_heights(self):
+        print("Updating Block Heights")
+        cursor = self.conn.execute("SELECT block_hash FROM wallet WHERE block_height IS NULL")
+        for row in cursor:
+            height = self.get_block_height(row[0])
+            self.conn.execute("UPDATE wallet SET block_height=? WHERE block_hash=?", (height, row[0]))
+            self.conn.commit()
+
     def insert_issuance(self, block_height, block_time, asset_id, amount, txid, txindex, token, tokenamount):
         self.conn.execute("INSERT INTO issuances VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (block_height, to_timestamp(block_time), asset_id, amount, txid, txindex, token, tokenamount))
 
     def insert_peg(self, block_height, block_time, amount, txid, txindex, bitcoinaddress, bitcointxid=None, bitcointxindex=None):
         self.conn.execute("INSERT INTO pegs VALUES (?, ?, ?, ? , ?, ?, ?, ?)", (block_height, to_timestamp(block_time), amount, txid, txindex, bitcoinaddress, bitcointxid, bitcointxindex))
 
-    def insert_wallet_receive(self, txid, txindex, amount, block_height, block_timestamp):
-        if block_height == None:
+    def insert_wallet_receive(self, txid, txindex, amount, block_hash, block_timestamp, block_height):
+        if block_hash == None:
             return
         cursor = self.conn.execute("SELECT COUNT(*) FROM wallet WHERE txid=? AND txindex=?", (txid ,txindex))
         if cursor.fetchone()[0] == 0:
-            self.conn.execute("INSERT INTO wallet VALUES (?, ?, ?, ?, ?, ?, ?)",(txid, txindex, amount, block_height, block_timestamp, None, None))
+            self.conn.execute("INSERT INTO wallet VALUES (?, ?, ?, ?, ?, ?, ?, ?)",(txid, txindex, amount, block_hash, block_timestamp, None, None, block_height))
 
     def insert_fee(self, block_height, block_time, amount):
         self.conn.execute("INSERT INTO fees VALUES (?, ?, ?)", (block_height, to_timestamp(block_time), amount))
