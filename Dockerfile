@@ -9,4 +9,4 @@ COPY . .
 
 VOLUME /usr/src/app/liquid.db
 
-CMD [ "python", "./parse-chain.py" ]
+CMD [ "python", "-u", "./parse-chain.py" ]
