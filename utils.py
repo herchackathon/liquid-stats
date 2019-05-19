@@ -8,7 +8,8 @@ import json
 def get_block_from_txid(txid):
     tx_template = "https://blockstream.info/api/tx/{0}"
     tx_info = get_json_from_url(tx_template.format(txid))
-    return tx_info["status"]["block_hash"], get_block_from_hash(tx_info["status"]["block_hash"]), tx_info["status"]["block_height"]
+    hash, height = get_block_from_hash(tx_info["status"]["block_hash"])
+    return tx_info["status"]["block_hash"], hash, height
 
 def get_block_from_hash(block_hash):
     if block_hash == None:

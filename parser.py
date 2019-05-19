@@ -24,8 +24,8 @@ class Parser:
             for curr_block_height in range(starting_block, ending_block+1):
                 self.parse_block(curr_block_height, logger, cursor, liquid_rpc, bitcoin_rpc)
 
-                # Log to console and save progress every 1000 blocks
-                if curr_block_height % 1000 == 0:
+                # Log to console and save progress every 500 blocks
+                if curr_block_height % 500 == 0:
                     self.save_progress(cursor, logger)
                     liquid_rpc, bitcoin_rpc = get_rpc_proxy(self.config)
         else:
